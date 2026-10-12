@@ -50,6 +50,43 @@ def target_addition(counter, key_word0):
     return (counter + key_word0) & MASK32
 
 
+def first_round_a(key_word0):
+    """a = state0 + state4 = const0 + key0, the fixed sum formed at the very
+    start of QR(0,4,8,12). Known once key0 is known; const0 is public."""
+    return (CONSTANTS[0] + key_word0) & MASK32
+
+
+def first_round_xor_target(counter, key_word0):
+    """Real ChaCha20 first-round CPA target (no simplification).
+
+    In QR(0,4,8,12):
+        a = const0 + key0          # fixed across traces
+        d = counter ^ a            # known-varying counter XORs secret-derived a
+        d = rotl(d, 16)
+
+    The XOR intermediate (counter ^ a) is the cleanest CPA target: byte j
+    depends only on counter byte j and a byte j, with no carry between bytes,
+    and the following rotl(16) is byte-aligned so it merely relabels which
+    sample window a byte leaks in. Recover a byte-wise, then key0 = a - const0.
+
+    This is the correct target for a real ChaCha20 core, unlike target_addition
+    which assumes the counter is added to the key directly (it is not -- the
+    counter enters by XOR against const0+key0)."""
+    return counter ^ first_round_a(key_word0)
+
+
+def first_round_key4_target(counter, key_word0, key_word4):
+    """Second-stage target in the same quarterround, for recovering key4 once
+    key0 (hence a and d) is known:
+        d = rotl(counter ^ a, 16)  # fully known after key0 recovered
+        c = state8 + d = key4 + d  # key4 added to known-varying d
+    This is an ADD target (recover byte-wise with carry chaining), the same
+    machinery as recover_key_word."""
+    a = first_round_a(key_word0)
+    d = rotl32(counter ^ a, 16)
+    return (key_word4 + d) & MASK32
+
+
 def hamming_weight_vec(x):
     x = np.asarray(x, dtype=np.uint32) & 0xFF
     weight = np.zeros(x.shape, dtype=np.uint16)
