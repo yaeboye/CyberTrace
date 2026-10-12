@@ -1,62 +1,53 @@
-import React, { useEffect, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import React, { useEffect, useRef, useState } from 'react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { api } from '../api';
 
 export const TraceChart = ({ running }) => {
   const [data, setData] = useState([]);
+  const [hardware, setHardware] = useState(null);
+  const timer = useRef(null);
 
-  // Fetch real live ADS1115 ADC trace data from backend
   useEffect(() => {
     const fetchTrace = async () => {
       try {
-        const res = await fetch('http://localhost:8000/traces/sample');
-        const json = await res.json();
-        if (json.samples && json.samples.length > 0) {
-          setData(json.samples);
+        const res = await api.get('/traces/sample');
+        if (res.data.samples?.length) {
+          setData(res.data.samples);
+          setHardware(res.data.hardware);
         }
-      } catch (e) {
-        // Fallback
-      }
+      } catch (e) { /* backend offline; keep last frame */ }
     };
-
     fetchTrace();
-    const interval = setInterval(fetchTrace, running ? 400 : 1500);
-    return () => clearInterval(interval);
+    timer.current = setInterval(fetchTrace, running ? 400 : 1500);
+    return () => clearInterval(timer.current);
   }, [running]);
 
   return (
-    <div className="glass-panel" style={{ height: '350px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <div>
-          <h2 className="header-title">Live Power Trace</h2>
-          <p className="header-subtitle">ADS1115 ADC Differential Measurement</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className={`status-indicator ${running ? 'active' : ''}`} />
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            {running ? 'COLLECTING' : 'IDLE'}
-          </span>
-        </div>
+    <div className="panel">
+      <div className="panel-head">
+        <h2>Power trace · ADS1115</h2>
+        <span className="conn">
+          <span className={`dot ${running ? 'run' : hardware ? 'on' : ''}`} />
+          {hardware === null ? 'no data' : hardware ? 'live ADC' : 'simulated'}
+        </span>
       </div>
-      
-      <div style={{ height: '230px', width: '100%' }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
-            <XAxis dataKey="sample" stroke="rgba(255,255,255,0.2)" tick={{fill: '#94a3b8', fontSize: 12}} />
-            <YAxis domain={['auto', 'auto']} stroke="rgba(255,255,255,0.2)" tick={{fill: '#94a3b8', fontSize: 12}} />
-            <Tooltip 
-              contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
-              itemStyle={{ color: '#3b82f6' }}
-            />
-            <Line 
-              type="monotone" 
-              dataKey="power" 
-              stroke="#3b82f6" 
-              strokeWidth={2} 
-              dot={false}
-              isAnimationActive={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+      <div className="panel-body">
+        <div style={{ height: 220, width: '100%' }}>
+          <ResponsiveContainer>
+            <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
+              <CartesianGrid stroke="#242931" vertical={false} />
+              <XAxis dataKey="sample" stroke="#3a4049" tick={{ fill: '#6b7280', fontSize: 11 }} />
+              <YAxis domain={['auto', 'auto']} stroke="#3a4049" tick={{ fill: '#6b7280', fontSize: 11 }} />
+              <Tooltip
+                contentStyle={{ background: '#1a1d21', border: '1px solid #2b3038', borderRadius: 4, fontSize: 12 }}
+                labelStyle={{ color: '#9aa1a9' }}
+                itemStyle={{ color: '#4aa3c7' }}
+              />
+              <Line type="monotone" dataKey="power" stroke="#4aa3c7" strokeWidth={1.5}
+                    dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
