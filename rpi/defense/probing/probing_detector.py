@@ -105,109 +105,164 @@ class ProbingDetector:
             "timing_cv": timing_cv,
         }
 
+FEATURE_NAMES = [
+    "entropy", "rate", "timing_cv", "duplicate_ratio",
+    "sequentialness", "compression_ratio", "autocorr", "burst_ratio", "accel",
+]
+
+
 class MLProbingDetector(ProbingDetector):
-    """Upgraded ML-based detector using Isolation Forest trained on normal traffic.
-    Extracts expanded features: duplicate ratio, counter-sequentialness, 
-    compression ratio, inter-arrival autocorrelation, burst ratio, and rate acceleration."""
-    
-    def __init__(self, window_seconds=10.0, min_samples=10):
+    """ML-based detector: an Isolation Forest over nine traffic features,
+    trained only on normal traffic (one-class anomaly detection — no labelled
+    attack data required, which matches a real deployment where attacks are
+    unseen in advance).
+
+    Two things make this robust where a raw Isolation Forest is not:
+      - features are standardised (StandardScaler) before training and
+        scoring, so rate (~0-100/s) and autocorrelation (~+-0.6) contribute
+        on equal footing instead of rate dominating every split;
+      - decisions use the continuous anomaly score against a margin derived
+        from the training distribution, rather than the default contamination
+        threshold that sits flush against the normal cluster and flips on
+        RNG noise.
+
+    The win over the rule-based detector is a *stealthy* attacker that stays
+    under the rate/entropy/timing thresholds individually yet is still caught
+    because the joint feature signature (sequential counters + compressible
+    payloads + regular timing) never occurs in normal traffic."""
+
+    def __init__(self, window_seconds=10.0, min_samples=10, margin_sigmas=3.5):
         super().__init__(window_seconds, min_samples=min_samples)
+        self.margin_sigmas = margin_sigmas
         try:
             from sklearn.ensemble import IsolationForest
-            self.model = IsolationForest(contamination=0.01, random_state=42)
+            from sklearn.preprocessing import StandardScaler
+            self.model = IsolationForest(
+                n_estimators=200, contamination="auto", random_state=42
+            )
+            self.scaler = StandardScaler()
             self.has_sklearn = True
         except ImportError:
+            self.model = None
+            self.scaler = None
             self.has_sklearn = False
-            print("Warning: scikit-learn is not installed. MLProbingDetector will fall back to rule-based.")
+            print("Warning: scikit-learn not installed. MLProbingDetector falls back to rule-based.")
         self.is_trained = False
-        
+        self.score_threshold = None
+
     def _expanded_features(self):
         base = self.extract_features()
         if not base:
             return None
-            
+
         payloads = base["payloads"]
         gaps = base["gaps"]
         n = base["n_samples"]
-        
-        # 1. Duplicate Payload Ratio
+
         unique_payloads = len(set(payloads))
         duplicate_ratio = 1.0 - (unique_payloads / n)
-        
-        # 2. Counter-Sequentialness
+
         seq_count = 0
         try:
             ints = [int.from_bytes(p, "big") for p in payloads if len(p) >= 4]
             if len(ints) > 1:
-                seq_count = sum(1 for i in range(1, len(ints)) if ints[i] == ints[i-1] + 1)
+                seq_count = sum(1 for i in range(1, len(ints)) if ints[i] == ints[i - 1] + 1)
         except Exception:
             pass
         sequentialness = seq_count / max(1, len(payloads) - 1)
-        
-        # 3. Compression ratio
+
         raw_data = b"".join(payloads)
         if len(raw_data) > 0:
-            compressed = zlib.compress(raw_data)
-            compression_ratio = len(compressed) / len(raw_data)
+            compression_ratio = len(zlib.compress(raw_data)) / len(raw_data)
         else:
             compression_ratio = 1.0
-            
-        # 4. Inter-arrival autocorrelation (lag 1)
-        if len(gaps) > 1:
-            mean_gap = np.mean(gaps)
-            var_gap = np.var(gaps)
+
+        gaps_arr = np.asarray(gaps, dtype=np.float64)
+        if gaps_arr.size > 1:
+            mean_gap = gaps_arr.mean()
+            var_gap = gaps_arr.var()
             if var_gap > 0:
-                autocorr = np.sum((gaps[:-1] - mean_gap) * (gaps[1:] - mean_gap)) / ((len(gaps) - 1) * var_gap)
+                autocorr = float(
+                    np.sum((gaps_arr[:-1] - mean_gap) * (gaps_arr[1:] - mean_gap))
+                    / ((gaps_arr.size - 1) * var_gap)
+                )
             else:
                 autocorr = 0.0
+            burst_ratio = float(gaps_arr.max() / max(mean_gap, 1e-9))
+            accel = float(np.mean(np.diff(gaps_arr)))
         else:
-            autocorr = 0.0
-            
-        # 5. Burst Ratio
-        burst_ratio = max(gaps) / max(np.mean(gaps), 1e-9) if gaps else 1.0
-        
-        # 6. Rate Acceleration
-        accel = np.mean(np.diff(gaps)) if len(gaps) > 1 else 0.0
-        
-        features = [
-            base["entropy"],
-            base["rate"],
-            base["timing_cv"],
-            duplicate_ratio,
-            sequentialness,
-            compression_ratio,
-            autocorr,
-            burst_ratio,
-            accel
-        ]
-        return np.array(features)
+            autocorr, burst_ratio, accel = 0.0, 1.0, 0.0
+
+        return np.array([
+            base["entropy"], base["rate"], base["timing_cv"], duplicate_ratio,
+            sequentialness, compression_ratio, autocorr, burst_ratio, accel,
+        ], dtype=np.float64)
 
     def train(self, normal_features_list):
-        if not self.has_sklearn:
-            return
-        if not normal_features_list:
+        if not self.has_sklearn or not normal_features_list:
             return
         X = np.vstack(normal_features_list)
-        self.model.fit(X)
+        Xs = self.scaler.fit_transform(X)
+        self.model.fit(Xs)
+
+        normal_scores = self.model.score_samples(Xs)
+        self.score_threshold = float(
+            normal_scores.mean() - self.margin_sigmas * normal_scores.std()
+        )
         self.is_trained = True
-        
+
+    def anomaly_score(self):
+        """Signed anomaly score for the current window. Lower = more anomalous.
+        None if not enough samples or not trained."""
+        f = self._expanded_features()
+        if f is None or not self.is_trained or not self.has_sklearn:
+            return None
+        return float(self.model.score_samples(self.scaler.transform([f]))[0])
+
     def check(self):
         f = self._expanded_features()
         if f is None or not self.is_trained or not self.has_sklearn:
             return super().check()
-            
-        # Predict: 1 for normal, -1 for anomaly
-        prediction = self.model.predict([f])[0]
-        is_anomaly = (prediction == -1)
-        
+
+        score = float(self.model.score_samples(self.scaler.transform([f]))[0])
+        is_anomaly = score < self.score_threshold
+
         return {
             "alert": is_anomaly,
-            "reason": "Isolation Forest detected anomaly in expanded features" if is_anomaly else None,
+            "reason": (
+                f"Isolation Forest anomaly (score {score:.3f} < threshold "
+                f"{self.score_threshold:.3f})" if is_anomaly else None
+            ),
             "n_samples": len(self.events),
-            "entropy": f[0],
-            "rate": f[1],
-            "timing_cv": f[2]
+            "score": score,
+            "threshold": self.score_threshold,
+            "entropy": float(f[0]),
+            "rate": float(f[1]),
+            "timing_cv": float(f[2]),
         }
+
+
+def build_trained_ml_detector(window_seconds=60, n_windows=120, events_per_window=20,
+                              seed=7, min_samples=10, margin_sigmas=3.0):
+    """Trains an MLProbingDetector on freshly simulated normal traffic and
+    returns it ready to use. Centralises training so the demo, tests, and
+    API all share one definition instead of re-rolling it inconsistently."""
+    detector = MLProbingDetector(window_seconds=window_seconds,
+                                 min_samples=min_samples, margin_sigmas=margin_sigmas)
+    if not detector.has_sklearn:
+        return detector
+
+    rng = np.random.default_rng(seed)
+    features = []
+    t = 0.0
+    for _ in range(n_windows):
+        tmp = MLProbingDetector(window_seconds=window_seconds, min_samples=min_samples)
+        t = simulate_normal_traffic(tmp, rng, n_events=events_per_window, base_time=t)
+        f = tmp._expanded_features()
+        if f is not None:
+            features.append(f)
+    detector.train(features)
+    return detector
 
 
 def simulate_normal_traffic(detector, rng, n_events=40, base_time=0.0):
@@ -225,6 +280,29 @@ def simulate_attacker_traffic(detector, rng, n_events=200, base_time=0.0, counte
     for i in range(n_events):
         t += 0.01 + rng.normal(0, 0.0005)
         payload = (counter_start + i).to_bytes(4, "big")
+        detector.ingest(t, payload)
+    return t
+
+
+def simulate_stealthy_attacker(detector, rng, n_events=180, base_time=0.0,
+                               rate_hz=5.0, jitter=0.45):
+    """A patient attacker that deliberately stays under every rule threshold:
+      - high-entropy random plaintexts (as real CPA uses varied inputs), so
+        the entropy rule (< 4.0 bits) never fires;
+      - a throttled ~5/s rate, well under the 20/s rate rule;
+      - human-like timing jitter, keeping timing-CV above the 0.15 rule.
+    None of the three hard rules trip. But 5/s is ~7x the learned normal rate
+    (~0.7/s), so the ML model, which scores deviation from the whole normal
+    distribution rather than fixed cutoffs, still flags it. That gap between
+    'normal behaviour' and 'the loosest threshold that avoids false alarms on
+    bursts' is exactly where a throttled attacker hides, and what the ML layer
+    closes."""
+    t = base_time
+    mean_gap = 1.0 / rate_hz
+    for _ in range(n_events):
+        t += max(0.001, mean_gap * (1.0 + rng.normal(0, jitter)))
+        size = int(rng.integers(4, 16))
+        payload = bytes(rng.integers(0, 256, size=size, dtype=np.uint8))
         detector.ingest(t, payload)
     return t
 
@@ -253,66 +331,35 @@ if __name__ == "__main__":
     if result2["alert"]:
         print(f"reason: {result2['reason']}")
 
-    print("\n--- ML-based (Isolation Forest) ---")
-    ml_detector = MLProbingDetector(window_seconds=60)
+    print("\n--- ML-based (Isolation Forest, standardised features) ---")
+    ml_detector = build_trained_ml_detector(window_seconds=60)
     if ml_detector.has_sklearn:
-        normal_training_features = []
-        t = 0.0
-        for _ in range(50):
-            temp_detector = MLProbingDetector(window_seconds=60)
-            t = simulate_normal_traffic(temp_detector, rng, n_events=20, base_time=t)
-            f = temp_detector._expanded_features()
-            if f is not None:
-                normal_training_features.append(f)
-                
-        ml_detector.train(normal_training_features)
-        print(f"Trained Isolation Forest on {len(normal_training_features)} normal traffic windows.")
-        
-        ml_test_normal = MLProbingDetector(window_seconds=60)
-        ml_test_normal.model = ml_detector.model
-        ml_test_normal.is_trained = ml_detector.is_trained
-        simulate_normal_traffic(ml_test_normal, rng, n_events=40)
-        ml_res_norm = ml_test_normal.check()
-        print(f"ML normal traffic check -> ALERT: {ml_res_norm['alert']}")
-        
-        ml_test_attack = MLProbingDetector(window_seconds=60)
-        ml_test_attack.model = ml_detector.model
-        ml_test_attack.is_trained = ml_detector.is_trained
-        simulate_attacker_traffic(ml_test_attack, rng, n_events=200)
-        ml_res_atk = ml_test_attack.check()
-        print(f"ML attacker traffic check -> ALERT: {ml_res_atk['alert']}")
-        if ml_res_atk["alert"]:
-             print(f"reason: {ml_res_atk['reason']}")
+        def ml_view(trained, simulate, **kw):
+            d = MLProbingDetector(window_seconds=60)
+            d.model, d.scaler = trained.model, trained.scaler
+            d.score_threshold, d.is_trained = trained.score_threshold, True
+            simulate(d, np.random.default_rng(kw.pop("seed", 11)), **kw)
+            return d.check()
 
-        print("\n--- Progressive Check (Rule-based vs ML) ---")
-        detector_progressive = ProbingDetector(window_seconds=60, min_samples=10)
-        ml_progressive = MLProbingDetector(window_seconds=60, min_samples=10)
-        ml_progressive.model = ml_detector.model
-        ml_progressive.is_trained = ml_detector.is_trained
-        
-        t = 0.0
-        rule_detected_at = None
-        ml_detected_at = None
-        
-        for i in range(200):
-            t += 0.01 + rng.normal(0, 0.0005)
-            payload = i.to_bytes(4, "big")
-            
-            detector_progressive.ingest(t, payload)
-            ml_progressive.ingest(t, payload)
-            
-            if rule_detected_at is None:
-                if detector_progressive.check()["alert"]:
-                    rule_detected_at = i + 1
-                    
-            if ml_detected_at is None:
-                if ml_progressive.check()["alert"]:
-                    ml_detected_at = i + 1
-                    
-            if rule_detected_at is not None and ml_detected_at is not None:
-                break
-                
-        print(f"Rule-based detected after {rule_detected_at} requests")
-        print(f"ML-based detected after {ml_detected_at} requests")
+        norm = ml_view(ml_detector, simulate_normal_traffic, n_events=40)
+        print(f"  normal traffic   -> ALERT={norm['alert']}  score={norm['score']:.3f} "
+              f"(threshold {norm['threshold']:.3f})")
+
+        aggressive = ml_view(ml_detector, simulate_attacker_traffic, n_events=200)
+        print(f"  aggressive attack-> ALERT={aggressive['alert']}  score={aggressive['score']:.3f}")
+
+        stealthy = ml_view(ml_detector, simulate_stealthy_attacker, n_events=60)
+        print(f"  stealthy attack  -> ALERT={stealthy['alert']}  score={stealthy['score']:.3f}")
+
+        print("\n--- novelty: stealthy attacker vs rule-based thresholds ---")
+        rule = ProbingDetector(window_seconds=60)
+        simulate_stealthy_attacker(rule, np.random.default_rng(11), n_events=60)
+        rule_res = rule.check()
+        print(f"  rule-based on stealthy attack -> ALERT={rule_res['alert']} "
+              f"(rate={rule_res.get('rate', 0):.1f}/s, entropy={rule_res.get('entropy', 0):.2f}, "
+              f"timing_cv={rule_res.get('timing_cv', 0):.2f})")
+        print(f"  ML       on stealthy attack -> ALERT={stealthy['alert']}")
+        if not rule_res["alert"] and stealthy["alert"]:
+            print("  => ML catches the throttled attacker the rule thresholds miss.")
     else:
         print("Skipping ML demo because scikit-learn is missing.")

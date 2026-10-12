@@ -21,7 +21,10 @@ sys.path.insert(0, str(ROOT / "defense" / "probing"))
 
 from virtual_device import VirtualESP32, BYTE_LEAK_SAMPLES
 from cpa_engine import recover_key_word, attack_byte
-from probing_detector import ProbingDetector, MLProbingDetector, simulate_normal_traffic, simulate_attacker_traffic
+from probing_detector import (
+    ProbingDetector, MLProbingDetector, build_trained_ml_detector,
+    simulate_normal_traffic, simulate_attacker_traffic, simulate_stealthy_attacker,
+)
 
 
 def separator(title: str):
@@ -218,35 +221,35 @@ def demo_probing():
         print(f"    reason: {r_a['reason']}")
 
     print("\n--- ML-based (Isolation Forest) ---")
-    ml_det = MLProbingDetector(window_seconds=60)
+    ml_det = build_trained_ml_detector(window_seconds=60)
+    ml_ok = True
     if ml_det.has_sklearn:
-        training_features = []
-        t = 0.0
-        for _ in range(50):
-            tmp = MLProbingDetector(window_seconds=60)
-            t = simulate_normal_traffic(tmp, rng, n_events=20, base_time=t)
-            f = tmp._expanded_features()
-            if f is not None:
-                training_features.append(f)
-        ml_det.train(training_features)
-        print(f"  trained on {len(training_features)} normal windows")
+        def ml_view(simulate, **kw):
+            d = MLProbingDetector(window_seconds=60)
+            d.model, d.scaler = ml_det.model, ml_det.scaler
+            d.score_threshold, d.is_trained = ml_det.score_threshold, True
+            simulate(d, np.random.default_rng(kw.pop("seed", 11)), **kw)
+            return d.check()
 
-        ml_n = MLProbingDetector(window_seconds=60)
-        ml_n.model = ml_det.model
-        ml_n.is_trained = True
-        simulate_normal_traffic(ml_n, rng, n_events=40)
-        print(f"  normal: ALERT={ml_n.check()['alert']}")
+        ml_n = ml_view(simulate_normal_traffic, n_events=40)
+        ml_a = ml_view(simulate_attacker_traffic, n_events=200)
+        ml_s = ml_view(simulate_stealthy_attacker, n_events=180)
+        print(f"  normal:            ALERT={ml_n['alert']}  score={ml_n['score']:.3f}")
+        print(f"  aggressive attack: ALERT={ml_a['alert']}  score={ml_a['score']:.3f}")
+        print(f"  stealthy attack:   ALERT={ml_s['alert']}  score={ml_s['score']:.3f}")
 
-        ml_a = MLProbingDetector(window_seconds=60)
-        ml_a.model = ml_det.model
-        ml_a.is_trained = True
-        simulate_attacker_traffic(ml_a, rng, n_events=200)
-        ml_r = ml_a.check()
-        print(f"  attacker: ALERT={ml_r['alert']}")
+        rule_s = ProbingDetector(window_seconds=60)
+        simulate_stealthy_attacker(rule_s, np.random.default_rng(11), n_events=180)
+        rule_s_res = rule_s.check()
+        print(f"\n  stealthy attack evades rule-based: {not rule_s_res['alert']} "
+              f"(rate={rule_s_res.get('rate', 0):.1f}/s entropy={rule_s_res.get('entropy', 0):.2f} "
+              f"cv={rule_s_res.get('timing_cv', 0):.2f})")
+        print(f"  ML still catches it:               {ml_s['alert']}")
+        ml_ok = (not ml_n["alert"]) and ml_a["alert"] and ml_s["alert"] and not rule_s_res["alert"]
     else:
         print("  scikit-learn not installed, skipping ML demo")
 
-    return not r_n["alert"] and r_a["alert"]
+    return not r_n["alert"] and r_a["alert"] and ml_ok
 
 
 # ══════════════════════════════════════════════════════════════
@@ -286,10 +289,10 @@ def demo_key_refresh():
 if __name__ == "__main__":
     sys.path.insert(0, str(ROOT / "defense" / "keyfresh"))
 
-    print("╔══════════════════════════════════════════════════════════╗")
-    print("║        CyberTrace — Full Pipeline Demonstration         ║")
-    print("║     Multi-Vector Side-Channel Attack & Defense          ║")
-    print("╚══════════════════════════════════════════════════════════╝")
+    print("=" * 60)
+    print("  CyberTrace -- Full Pipeline Demonstration")
+    print("  Multi-Vector Side-Channel Attack & Defense")
+    print("=" * 60)
 
     results = {}
 
