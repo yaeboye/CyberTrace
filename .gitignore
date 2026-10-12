@@ -17,6 +17,7 @@ build/
 data/traces/*.npy
 data/traces/*.csv
 data/keys/*.bin
+*.db
 
 # IDE
 .vscode/

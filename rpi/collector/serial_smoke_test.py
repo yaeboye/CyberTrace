@@ -20,7 +20,7 @@ def send_command(device: serial.Serial, command: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--port", default="/dev/serial0")
+    parser.add_argument("--port", default="/dev/ttyAMA0")
     parser.add_argument("--baud", default=115200, type=int)
     args = parser.parse_args()
 
