@@ -155,31 +155,57 @@ def run_cpa_attack(req: AttackRequest, run_id: int):
 
         with serial.Serial(req.port, 115200, timeout=1.5) as uart:
             time.sleep(0.1)
-            num_traces = min(req.num_traces, 100) # fast interactive batch for web UI
-            num_samples = 50
+            num_traces = min(req.num_traces, 2000)
+            num_samples = max(req.num_samples, 100)
 
-            for i in range(num_traces):
-                ctr = int(i + 1)
+            rng = np.random.default_rng()
+            ctr_list = rng.integers(0, 2**32, size=num_traces, dtype=np.uint64).astype(np.uint32)
+
+            for i, ctr in enumerate(ctr_list):
                 uart.reset_input_buffer()
-                uart.write(f"ENCRYPT {ctr:08x}\n".encode("ascii"))
+                uart.write(f"ENCRYPT {int(ctr):08x}\n".encode("ascii"))
                 uart.flush()
                 tr = [chan.voltage for _ in range(num_samples)]
-                uart.readline() # ciphertext
+                uart.readline()  # ciphertext
 
                 traces.append(tr)
-                counters.append(ctr)
+                counters.append(int(ctr))
                 state.traces_collected = i + 1
                 state.attack_progress = (i + 1) / num_traces * 100
 
             traces = np.array(traces)
+            counters_arr = np.array(counters, dtype=np.uint32)
+
+            # Actually run the CPA engine on the collected hardware traces.
+            # Leak sample positions are unknown on real hardware, so pick the
+            # highest-variance samples as candidate leak points (same heuristic
+            # as the collector's calibrate()) and build per-byte windows around
+            # them. Report whatever the engine actually recovers -- no claim is
+            # made that it matches unless it genuinely does.
+            variance = np.var(traces, axis=0)
+            leak_samples = sorted(np.argsort(variance)[-4:][::-1].tolist())
+            half = max(2, num_samples // 20)
+            traces_per_byte = [
+                traces[:, max(0, s - half):min(num_samples, s + half)] for s in leak_samples
+            ]
+            recovered = recover_key_word(counters_arr, traces_per_byte, verbose=False)
+
+            # The ESP32 firmware's key word 0 is fixed at 0xDEADBEEF.
+            actual_key = 0xDEADBEEF
             state.attack_result = {
                 "hardware": True,
-                "traces_used": num_traces,
-                "recovered_key": "0xdeadbeef",
-                "actual_key": "0xdeadbeef",
-                "match": True,
+                "traces_used": int(num_traces),
+                "recovered_key": f"0x{recovered:08x}",
+                "actual_key": f"0x{actual_key:08x}",
+                "match": bool(recovered == actual_key),
                 "mean_shunt_voltage": f"{float(np.mean(traces)):.4f} V",
-                "max_variance_sample": int(np.argmax(np.var(traces, axis=0))),
+                "leak_sample_indices": leak_samples,
+                "note": (
+                    "Simplified (counter+key) leakage model; real ChaCha20 mixes "
+                    "the counter by XOR, so full recovery on hardware may need the "
+                    "ARX quarterround model and more traces. Result is reported "
+                    "as-measured."
+                ),
             }
             hardware_succeeded = True
     except Exception as e:
@@ -229,18 +255,19 @@ def run_timing_attack(req: AttackRequest, run_id: int):
         with serial.Serial(req.port, 115200, timeout=1.5) as uart:
             time.sleep(0.1)
             ct_on = state.defense_status.get("constant_time", False)
-            uart.write(f"DEFENSE CONSTANT_TIME {1 if ct_on else 0}\n".encode("ascii"))
+            uart.write(f"DEFENSE CTIME {'ON' if ct_on else 'OFF'}\n".encode("ascii"))
             uart.flush()
             uart.readline()
 
             secret_len = 4
+            trials = max(req.num_samples // 10, 25)
             recovered = bytearray()
             for pos in range(secret_len):
                 best_guess, best_time = 0, -1.0
                 for guess in range(256):
                     candidate = bytes(recovered) + bytes([guess]) + bytes(secret_len - pos - 1)
                     deltas = []
-                    for _ in range(3):
+                    for _ in range(trials):
                         uart.reset_input_buffer()
                         t0 = time.perf_counter()
                         uart.write(f"CHECK {candidate.hex()}\n".encode("ascii"))
@@ -316,7 +343,7 @@ def run_replay_attack(req: AttackRequest, run_id: int):
         with serial.Serial(req.port, 115200, timeout=1.5) as uart:
             time.sleep(0.1)
             nonce_on = state.defense_status.get("nonce", False)
-            uart.write(f"DEFENSE NONCE {1 if nonce_on else 0}\n".encode("ascii"))
+            uart.write(f"DEFENSE NONCE {'ON' if nonce_on else 'OFF'}\n".encode("ascii"))
             uart.flush()
             uart.readline()
 
@@ -458,17 +485,18 @@ def defense_toggle(req: DefenseToggle):
         return {"error": f"unknown layer: {req.layer}"}
     state.defense_status[req.layer] = req.enabled
 
-    # 1. Target ESP32 defenses over hardware UART (/dev/ttyAMA0)
+    # 1. Target ESP32 defenses over hardware UART (/dev/ttyAMA0).
+    # Firmware's handleDefense accepts "<MASKING|CTIME|NONCE> <ON|OFF>".
     layer_map = {
         "masking": "MASKING",
-        "constant_time": "CONSTANT_TIME",
+        "constant_time": "CTIME",
         "nonce": "NONCE",
     }
     if req.layer in layer_map:
         try:
             import serial
             with serial.Serial("/dev/ttyAMA0", 115200, timeout=1.0) as uart:
-                cmd = f"DEFENSE {layer_map[req.layer]} {1 if req.enabled else 0}\n"
+                cmd = f"DEFENSE {layer_map[req.layer]} {'ON' if req.enabled else 'OFF'}\n"
                 uart.write(cmd.encode("ascii"))
                 uart.flush()
                 uart.readline()

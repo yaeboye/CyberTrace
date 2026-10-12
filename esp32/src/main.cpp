@@ -133,15 +133,26 @@ void handleCheck(const String &args) {
 
     bool accepted;
 
+    // Per-byte work amplified to kByteCostUs so the early-exit timing leak is
+    // measurable over UART jitter. On a bare 240MHz core a few byte-compares
+    // differ by nanoseconds, far below what the Pi can resolve across the
+    // serial link; a real system doing per-byte work (HMAC chunk, slow-bus
+    // fetch) would differ by this order. The constant-time path below always
+    // pays the full kSecretLen cost regardless of where the mismatch is.
+    constexpr uint32_t kByteCostUs = 200;
+
     if (constant_time_enabled) {
         uint8_t diff = (byte_len != kSecretLen) ? 1 : 0;
-        size_t check_len = (byte_len < kSecretLen) ? byte_len : kSecretLen;
-        for (size_t i = 0; i < check_len; i++)
-            diff |= candidate[i] ^ auth_secret[i];
+        for (size_t i = 0; i < kSecretLen; i++) {
+            uint8_t c = (i < byte_len) ? candidate[i] : 0;
+            diff |= c ^ auth_secret[i];
+            delayMicroseconds(kByteCostUs);
+        }
         accepted = (diff == 0);
     } else {
         accepted = (byte_len == kSecretLen);
         for (size_t i = 0; i < byte_len && i < kSecretLen; i++) {
+            delayMicroseconds(kByteCostUs);
             if (candidate[i] != auth_secret[i]) {
                 accepted = false;
                 break;
