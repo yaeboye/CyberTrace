@@ -15,6 +15,7 @@ constexpr uint32_t kBaudRate = 115200;
 // millisecond timescale a slow ADC can actually sample -- the CPA methodology
 // is unchanged, only the signal magnitude is boosted.
 constexpr int kLeakPins[8] = {5, 6, 7, 8, 9, 10, 11, 12};
+constexpr int kLeakDummyPin = 13;     // held low; absorbs clear-bit work
 constexpr uint32_t kLeakIter = 6000;  // ~per-byte window length; tune vs ADC rate
 
 // ──────────────── ChaCha20 state ────────────────
@@ -240,8 +241,14 @@ void handleLeakLoop(const String &args) {
         for (uint32_t it = 0; it < kLeakIter; it++) {
             for (int k = 0; k < 8; k++) {
                 if (b & (1 << k)) {
+                    // set bit: real toggle on the shunt-measured rail
                     digitalWrite(kLeakPins[k], HIGH);
                     digitalWrite(kLeakPins[k], LOW);
+                } else {
+                    // clear bit: equal-cost dummy, no edge -> no dynamic current,
+                    // so each phase takes constant time but current ~ HW(byte)
+                    digitalWrite(kLeakDummyPin, LOW);
+                    digitalWrite(kLeakDummyPin, LOW);
                 }
             }
         }
@@ -292,6 +299,8 @@ void setup() {
         pinMode(kLeakPins[k], OUTPUT);
         digitalWrite(kLeakPins[k], LOW);
     }
+    pinMode(kLeakDummyPin, OUTPUT);
+    digitalWrite(kLeakDummyPin, LOW);
 
     Serial.begin(kBaudRate);
     Serial1.begin(kBaudRate, SERIAL_8N1, kPiRxPin, kPiTxPin);
