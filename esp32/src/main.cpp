@@ -7,6 +7,16 @@ constexpr int kPiRxPin = 18;
 constexpr int kPiTxPin = 17;
 constexpr uint32_t kBaudRate = 115200;
 
+// Amplified-leakage output pins: eight free, broken-out ESP32-S3 GPIOs with
+// nothing wired to them. LEAKLOOP toggles only the pins matching SET bits of
+// the target byte, so the data-dependent switching current on the VCC rail
+// (measured through the shunt by the ADS1115) scales with the byte's Hamming
+// weight. This amplifies microsecond-scale crypto leakage into the
+// millisecond timescale a slow ADC can actually sample -- the CPA methodology
+// is unchanged, only the signal magnitude is boosted.
+constexpr int kLeakPins[8] = {5, 6, 7, 8, 9, 10, 11, 12};
+constexpr uint32_t kLeakIter = 6000;  // ~per-byte window length; tune vs ADC rate
+
 // ──────────────── ChaCha20 state ────────────────
 uint32_t chacha_key[8] = {
     0xDEADBEEF, 0xCAFEBABE, 0x13371337, 0xA5A5A5A5,
@@ -218,6 +228,28 @@ void handleClock(const String &args) {
     }
 }
 
+void handleLeakLoop(const String &args) {
+    uint32_t counter = hexToU32(args.c_str());
+    // Real ChaCha20 first-round intermediate: d = counter ^ (const0 + key0).
+    uint32_t a = (kConstants[0] + chacha_key[0]) & 0xFFFFFFFF;
+    uint32_t d = counter ^ a;
+
+    digitalWrite(kTriggerPin, HIGH);
+    for (int j = 0; j < 4; j++) {
+        uint8_t b = (d >> (8 * j)) & 0xFF;
+        for (uint32_t it = 0; it < kLeakIter; it++) {
+            for (int k = 0; k < 8; k++) {
+                if (b & (1 << k)) {
+                    digitalWrite(kLeakPins[k], HIGH);
+                    digitalWrite(kLeakPins[k], LOW);
+                }
+            }
+        }
+    }
+    digitalWrite(kTriggerPin, LOW);
+    Serial1.println("LEAKDONE");
+}
+
 void handleCommand(String command) {
     command.trim();
 
@@ -236,6 +268,7 @@ void handleCommand(String command) {
     verb.toUpperCase();
 
     if      (verb == "ENCRYPT") handleEncrypt(args);
+    else if (verb == "LEAKLOOP") handleLeakLoop(args);
     else if (verb == "CHECK")   handleCheck(args);
     else if (verb == "CMD")     handleCmd(args);
     else if (verb == "SET_KEY") handleSetKey(args);
@@ -254,6 +287,11 @@ void handleCommand(String command) {
 void setup() {
     pinMode(kTriggerPin, OUTPUT);
     digitalWrite(kTriggerPin, LOW);
+
+    for (int k = 0; k < 8; k++) {
+        pinMode(kLeakPins[k], OUTPUT);
+        digitalWrite(kLeakPins[k], LOW);
+    }
 
     Serial.begin(kBaudRate);
     Serial1.begin(kBaudRate, SERIAL_8N1, kPiRxPin, kPiTxPin);
