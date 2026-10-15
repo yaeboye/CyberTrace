@@ -235,9 +235,17 @@ void handleLeakLoop(const String &args) {
     uint32_t a = (kConstants[0] + chacha_key[0]) & 0xFFFFFFFF;
     uint32_t d = counter ^ a;
 
+    // First-order Boolean masking: leak (d ^ mask) with a fresh hardware-random
+    // mask per call. The masked value's Hamming weight is statistically
+    // independent of d (hence of key0), so univariate CPA correlating against
+    // HW(d) collapses to the noise floor. mask = 0 when masking is disabled,
+    // leaving the unprotected leakage intact.
+    uint32_t mask = masking_enabled ? esp_random() : 0;
+    uint32_t v = d ^ mask;
+
     digitalWrite(kTriggerPin, HIGH);
     for (int j = 0; j < 4; j++) {
-        uint8_t b = (d >> (8 * j)) & 0xFF;
+        uint8_t b = (v >> (8 * j)) & 0xFF;
         for (uint32_t it = 0; it < kLeakIter; it++) {
             for (int k = 0; k < 8; k++) {
                 if (b & (1 << k)) {
