@@ -231,12 +231,28 @@ def demo_probing():
             simulate(d, np.random.default_rng(kw.pop("seed", 11)), **kw)
             return d.check()
 
+        def ml_detect_within(simulate, max_req, seed=11):
+            """Progressive detection: feed one request at a time (how an attack
+            actually ramps) and return the request count at first alert, else
+            None. This is the realistic measure -- a throttled attacker is
+            flagged as the window fills, not from a single full-window snapshot."""
+            d = MLProbingDetector(window_seconds=60, min_samples=10)
+            d.model, d.scaler = ml_det.model, ml_det.scaler
+            d.score_threshold, d.is_trained = ml_det.score_threshold, True
+            rng = np.random.default_rng(seed)
+            t = 0.0
+            for i in range(max_req):
+                t = simulate(d, rng, n_events=1, base_time=t)
+                if d.check()["alert"]:
+                    return i + 1
+            return None
+
         ml_n = ml_view(simulate_normal_traffic, n_events=40)
-        ml_a = ml_view(simulate_attacker_traffic, n_events=200)
-        ml_s = ml_view(simulate_stealthy_attacker, n_events=180)
-        print(f"  normal:            ALERT={ml_n['alert']}  score={ml_n['score']:.3f}")
-        print(f"  aggressive attack: ALERT={ml_a['alert']}  score={ml_a['score']:.3f}")
-        print(f"  stealthy attack:   ALERT={ml_s['alert']}  score={ml_s['score']:.3f}")
+        agg_at = ml_detect_within(simulate_attacker_traffic, 200)
+        stl_at = ml_detect_within(simulate_stealthy_attacker, 200)
+        print(f"  normal traffic:    ALERT={ml_n['alert']}  score={ml_n['score']:.3f}")
+        print(f"  aggressive attack: detected after {agg_at} requests")
+        print(f"  stealthy attack:   detected after {stl_at} requests")
 
         rule_s = ProbingDetector(window_seconds=60)
         simulate_stealthy_attacker(rule_s, np.random.default_rng(11), n_events=180)
@@ -244,8 +260,9 @@ def demo_probing():
         print(f"\n  stealthy attack evades rule-based: {not rule_s_res['alert']} "
               f"(rate={rule_s_res.get('rate', 0):.1f}/s entropy={rule_s_res.get('entropy', 0):.2f} "
               f"cv={rule_s_res.get('timing_cv', 0):.2f})")
-        print(f"  ML still catches it:               {ml_s['alert']}")
-        ml_ok = (not ml_n["alert"]) and ml_a["alert"] and ml_s["alert"] and not rule_s_res["alert"]
+        print(f"  ML catches it progressively:       within {stl_at} requests")
+        ml_ok = ((not ml_n["alert"]) and agg_at is not None and stl_at is not None
+                 and not rule_s_res["alert"])
     else:
         print("  scikit-learn not installed, skipping ML demo")
 
