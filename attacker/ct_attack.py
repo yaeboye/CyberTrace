@@ -36,6 +36,12 @@ def cmd_cpa(args):
     result = cpa.analyze(counters, traces)
     result["transport"] = tr.kind
     report.print_cpa(result, known_key0=KNOWN_KEY0 if not args.hw else None)
+    rot = tr.device_rotations() if hasattr(tr, "device_rotations") else []
+    if rot:
+        print(f"\n  [device active defense] probing detected at request {rot[0]} -- key "
+              f"auto-rotated {len(rot)} time(s) during collection. The traces now span "
+              f"multiple keys, so the attack cannot converge: the active defense defeated "
+              f"it automatically, with no manual intervention.")
     out = pathlib.Path(args.out)
     report.save_json(result, out / "cpa_report.json")
     if not args.no_plots:
@@ -124,6 +130,10 @@ def main():
         p.add_argument("--masked", action="store_true", help="(sim) device-under-test has masking on")
         p.add_argument("--constant-time", action="store_true")
         p.add_argument("--nonce", action="store_true")
+        p.add_argument("--probing", action="store_true",
+                       help="(sim) device runs active probing detection")
+        p.add_argument("--key-refresh", action="store_true",
+                       help="(sim) device auto-rotates its key on a probing alert")
 
     args = ap.parse_args()
     args.func(args)

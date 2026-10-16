@@ -30,12 +30,42 @@ class VirtualESP32:
         self.nonce_enabled = False
         self.kyber_s_hat = 1234  # secret NTT coefficient (matches firmware)
 
+        # active defense: the device watches its own request stream and, if it
+        # detects probing, rotates its key -- defeating an attack in progress
+        # without any manual intervention.
+        self.probing_detection_enabled = False
+        self.key_refresh_enabled = False
+        self.rotations = []          # request indices at which the key rotated
+        self._detector = None
+        self._def_clock = 0.0
+        self._req_index = 0
+
         self.last_seen_counter = -1
         self.encryption_count = 0
         self.request_log = []  # (timestamp, payload_bytes)
 
     def set_key(self, key_word):
         self.key_word = key_word & 0xFFFFFFFF
+
+    def _active_defense(self, payload_bytes):
+        """Feed one request into the on-device probing monitor; if an attack is
+        detected and key refresh is enabled, rotate the key automatically."""
+        self._req_index += 1
+        if not self.probing_detection_enabled:
+            return
+        if self._detector is None:
+            _probe_dir = pathlib.Path(__file__).resolve().parents[1] / "defense" / "probing"
+            sys.path.insert(0, str(_probe_dir))
+            from probing_detector import build_trained_ml_detector
+            self._detector = build_trained_ml_detector(window_seconds=60)
+        self._def_clock += 0.01  # attacker collects rapidly -> dense timestamps
+        self._detector.ingest(self._def_clock, payload_bytes)
+        if self._req_index % 10 != 0:
+            return
+        if self._detector.check().get("alert") and self.key_refresh_enabled:
+            self.set_key(int(self.rng.integers(0, 2**32)))  # rotate -> traces now worthless
+            self.rotations.append(self._req_index)
+            self._detector.events.clear()  # reset window after responding
 
     # ---------- CPA target: one power trace per encryption ----------
     def encrypt_with_trace(self, counter, n_samples=300, noise_std=1.0):
@@ -75,6 +105,7 @@ class VirtualESP32:
                 0, noise_std, size=per)
         self.encryption_count += 1
         self._log_request(counter.to_bytes(4, "big"))
+        self._active_defense(counter.to_bytes(4, "big"))
         return trace
 
     # ---------- Kyber target: mirrors firmware KYBERLEAK ----------
@@ -90,6 +121,7 @@ class VirtualESP32:
         trace = self.rng.normal(0, noise_std, size=n_samples) + leak_scale * kyber_hw(t)
         self.encryption_count += 1
         self._log_request(int(u).to_bytes(2, "big"))
+        self._active_defense(int(u).to_bytes(2, "big"))
         return trace
 
     # ---------- Timing attack target: secret comparison ----------

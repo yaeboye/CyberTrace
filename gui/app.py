@@ -113,7 +113,13 @@ class CyberTraceApp:
         ttk.Checkbutton(dut, text="Constant-time  (defeats timing attack)",
                         variable=self.ctime).pack(anchor="w", padx=10, pady=2)
         ttk.Checkbutton(dut, text="Nonce + counter  (defeats replay)",
-                        variable=self.nonce).pack(anchor="w", padx=10, pady=(2, 8))
+                        variable=self.nonce).pack(anchor="w", padx=10, pady=2)
+        self.probing = tk.BooleanVar(value=False)
+        self.keyref = tk.BooleanVar(value=False)
+        ttk.Checkbutton(dut, text="Probing detection  (active, ML)",
+                        variable=self.probing).pack(anchor="w", padx=10, pady=2)
+        ttk.Checkbutton(dut, text="Key refresh  (auto-rotate on detection)",
+                        variable=self.keyref).pack(anchor="w", padx=10, pady=(2, 8))
 
         # attacker
         atk = ttk.LabelFrame(left, text="Attacker  (key recovery only)",
@@ -226,6 +232,8 @@ class CyberTraceApp:
         if self.masked.get(): f.append("--masked")
         if self.ctime.get(): f.append("--constant-time")
         if self.nonce.get(): f.append("--nonce")
+        if self.probing.get() or self.keyref.get(): f.append("--probing")
+        if self.keyref.get(): f.append("--key-refresh")
         return f
 
     def _common(self):

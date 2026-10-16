@@ -42,6 +42,9 @@ class SimTransport:
     def command(self, counter, payload):
         return self._dev.submit_command(int(counter), bytes(payload))
 
+    def device_rotations(self):
+        return list(getattr(self._dev, "rotations", []))
+
 
 class HwTransport:
     """Drives the real ESP32 over UART (/dev/ttyAMA0) plus the ADS1115 ADC.
@@ -112,4 +115,6 @@ def open_transport(args):
     dev.masking_enabled = getattr(args, "masked", False)
     dev.constant_time_enabled = getattr(args, "constant_time", False)
     dev.nonce_enabled = getattr(args, "nonce", False)
+    dev.probing_detection_enabled = getattr(args, "probing", False)
+    dev.key_refresh_enabled = getattr(args, "key_refresh", False)
     return SimTransport(dev)
