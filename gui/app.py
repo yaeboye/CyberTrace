@@ -32,7 +32,8 @@ class CyberTraceApp:
         self.root = root
         root.title("CyberTrace — Side-Channel Attack & Defense")
         root.configure(bg=BG)
-        root.geometry("1180x760")
+        root.geometry("1180x820")
+        root.minsize(980, 600)
         self._busy = False
         self._photo = None
 
@@ -76,9 +77,21 @@ class CyberTraceApp:
         body = tk.Frame(self.root, bg=BG)
         body.pack(fill="both", expand=True, padx=16, pady=8)
 
-        left = tk.Frame(body, bg=BG, width=320)
-        left.pack(side="left", fill="y")
-        left.pack_propagate(False)
+        # scrollable left control column (so nothing is clipped at high DPI)
+        left_outer = tk.Frame(body, bg=BG, width=340)
+        left_outer.pack(side="left", fill="y")
+        left_outer.pack_propagate(False)
+        lcanvas = tk.Canvas(left_outer, bg=BG, highlightthickness=0, width=318)
+        lvsb = ttk.Scrollbar(left_outer, orient="vertical", command=lcanvas.yview)
+        lcanvas.configure(yscrollcommand=lvsb.set)
+        lvsb.pack(side="right", fill="y")
+        lcanvas.pack(side="left", fill="both", expand=True)
+        left = tk.Frame(lcanvas, bg=BG)
+        lcanvas.create_window((0, 0), window=left, anchor="nw", width=312)
+        left.bind("<Configure>",
+                  lambda e: lcanvas.configure(scrollregion=lcanvas.bbox("all")))
+        lcanvas.bind_all("<MouseWheel>",
+                         lambda e: lcanvas.yview_scroll(int(-e.delta / 120), "units"))
 
         # parameters
         par = ttk.LabelFrame(left, text="Parameters", style="Panel.TLabelframe")
