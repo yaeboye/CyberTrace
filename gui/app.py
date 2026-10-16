@@ -101,9 +101,19 @@ class CyberTraceApp:
         self.traces = tk.IntVar(value=1500)
         ttk.Spinbox(row, from_=200, to=10000, increment=100, width=8,
                     textvariable=self.traces).pack(side="right")
+        # device-under-test defenses (what the target has enabled)
+        dut = ttk.LabelFrame(left, text="Device defenses (under test)",
+                             style="Panel.TLabelframe")
+        dut.pack(fill="x", pady=(0, 12))
         self.masked = tk.BooleanVar(value=False)
-        ttk.Checkbutton(par, text="Device under test has masking ON",
-                        variable=self.masked).pack(anchor="w", padx=10, pady=(0, 8))
+        self.ctime = tk.BooleanVar(value=False)
+        self.nonce = tk.BooleanVar(value=False)
+        ttk.Checkbutton(dut, text="Masking  (defeats power CPA)",
+                        variable=self.masked).pack(anchor="w", padx=10, pady=(6, 2))
+        ttk.Checkbutton(dut, text="Constant-time  (defeats timing attack)",
+                        variable=self.ctime).pack(anchor="w", padx=10, pady=2)
+        ttk.Checkbutton(dut, text="Nonce + counter  (defeats replay)",
+                        variable=self.nonce).pack(anchor="w", padx=10, pady=(2, 8))
 
         # attacker
         atk = ttk.LabelFrame(left, text="Attacker  (key recovery only)",
@@ -124,6 +134,7 @@ class CyberTraceApp:
         self._btn(dfn, "Leakage assessment  (Kyber)",
                   lambda: self.run_assess("kyber"))
         self._btn(dfn, "Probing detection analytics", self.run_monitor)
+        self._btn(dfn, "Key refresh  (rotate device key)", self.run_refresh)
 
         self._btn(left, "Clear output", self.clear)
 
@@ -210,11 +221,15 @@ class CyberTraceApp:
         self._photo = ImageTk.PhotoImage(img)
         self.fig_label.configure(image=self._photo, text="")
 
+    def _flags(self):
+        f = []
+        if self.masked.get(): f.append("--masked")
+        if self.ctime.get(): f.append("--constant-time")
+        if self.nonce.get(): f.append("--nonce")
+        return f
+
     def _common(self):
-        args = ["--traces", str(self.traces.get())]
-        if self.masked.get():
-            args.append("--masked")
-        return args
+        return ["--traces", str(self.traces.get())] + self._flags()
 
     # ---------------- actions ----------------
     def run_cpa(self):
@@ -222,19 +237,22 @@ class CyberTraceApp:
                   ROOT / "attacker", fig="cpa_report.png")
 
     def run_kyber(self):
-        self._run("Kyber CPA", ["ct_attack.py", "kyber", "--traces", str(self.traces.get())]
-                  + (["--masked"] if self.masked.get() else []), ROOT / "attacker")
+        self._run("Kyber CPA",
+                  ["ct_attack.py", "kyber", "--traces", str(self.traces.get())] + self._flags(),
+                  ROOT / "attacker")
 
     def run_full(self):
         self._run("Full key recovery", ["chacha_full.py", "--traces", "4000"],
                   ROOT / "attacker")
 
     def run_timing(self):
-        self._run("Timing", ["ct_attack.py", "timing"]
-                  + (["--masked"] if self.masked.get() else []), ROOT / "attacker")
+        self._run("Timing", ["ct_attack.py", "timing", *self._flags()], ROOT / "attacker")
 
     def run_replay(self):
-        self._run("Replay", ["ct_attack.py", "replay"], ROOT / "attacker")
+        self._run("Replay", ["ct_attack.py", "replay", *self._flags()], ROOT / "attacker")
+
+    def run_refresh(self):
+        self._run("Key refresh", ["ct_defend.py", "refresh"], ROOT / "defender")
 
     def run_assess(self, target):
         self._run(f"Assess {target}",
