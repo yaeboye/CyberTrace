@@ -33,6 +33,9 @@ class SimTransport:
     def leakloop(self, counter):
         return self._dev.leakloop_trace(int(counter))
 
+    def kyberleak(self, u):
+        return self._dev.kyberleak_trace(int(u))
+
     def check(self, candidate):
         return self._dev.check_secret(bytes(candidate))
 
@@ -64,6 +67,16 @@ class HwTransport:
     def leakloop(self, counter):
         self._uart.reset_input_buffer()
         self._uart.write(b"LEAKLOOP %08x\n" % int(counter))
+        self._uart.flush()
+        buf = []
+        while not self._uart.in_waiting:
+            buf.append(self._chan.voltage)
+        self._uart.readline()
+        return np.asarray(buf, dtype=np.float64)
+
+    def kyberleak(self, u):
+        self._uart.reset_input_buffer()
+        self._uart.write(b"KYBERLEAK %x\n" % (int(u) & 0xFFFFFFFF))
         self._uart.flush()
         buf = []
         while not self._uart.in_waiting:

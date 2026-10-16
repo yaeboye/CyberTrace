@@ -19,6 +19,7 @@ import time
 import numpy as np
 
 import cpa
+import kyber as kyber_mod
 import report
 from transport import open_transport
 
@@ -39,6 +40,23 @@ def cmd_cpa(args):
     report.save_json(result, out / "cpa_report.json")
     if not args.no_plots:
         report.plot_cpa(result, counters, traces, out / "cpa_report.png")
+
+
+def cmd_kyber(args):
+    tr = open_transport(args)
+    print(f"[attacker] Kyber NTT-coefficient CPA via {tr.kind}, {args.traces} traces...")
+    rng = np.random.default_rng(args.seed)
+    u = rng.integers(0, kyber_mod.KYBER_Q, size=args.traces).astype(np.int64)
+    rows = [tr.kyberleak(int(x)) for x in u]
+    L = min(len(r) for r in rows)
+    traces = np.array([r[:L] for r in rows])
+    r = kyber_mod.recover_coefficient(u, traces)
+    known = 1234  # sim/firmware secret coefficient
+    print(f"\n  KYBER COEFFICIENT ANALYSIS")
+    print(f"  recovered s_hat = {r['s_hat']}  (corr {r['corr']:.3f}, margin {r['margin']:.3f})")
+    if not args.hw:
+        print(f"  verification    : {'MATCH' if r['s_hat'] == known else 'MISMATCH'} (true {known})")
+    print("  top-5 candidates: " + ", ".join(f"{g}:{c:.2f}" for g, c in r["top5"]))
 
 
 def cmd_timing(args):
@@ -87,6 +105,10 @@ def main():
     pc.add_argument("--no-plots", action="store_true")
     pc.set_defaults(func=cmd_cpa)
 
+    pk = sub.add_parser("kyber")
+    pk.add_argument("--traces", type=int, default=2500)
+    pk.set_defaults(func=cmd_kyber)
+
     pt = sub.add_parser("timing")
     pt.add_argument("--trials", type=int, default=40)
     pt.add_argument("--length", type=int, default=4)
@@ -95,7 +117,7 @@ def main():
     pr = sub.add_parser("replay")
     pr.set_defaults(func=cmd_replay)
 
-    for p in (pc, pt, pr):
+    for p in (pc, pk, pt, pr):
         p.add_argument("--hw", action="store_true", help="drive the real ESP32")
         p.add_argument("--port", default="/dev/ttyAMA0")
         p.add_argument("--seed", type=int, default=None)

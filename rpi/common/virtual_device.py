@@ -9,6 +9,7 @@ sys.path.insert(0, str(_CPA_DIR))
 from chacha20_model import (  # noqa: E402
     target_addition, first_round_xor_target, hamming_weight_vec,
 )
+from kyber_model import KYBER_Q, pointwise, hw as kyber_hw  # noqa: E402
 
 BYTE_LEAK_SAMPLES = [60, 140, 200, 260]
 
@@ -27,6 +28,7 @@ class VirtualESP32:
         self.masking_enabled = False
         self.constant_time_enabled = False
         self.nonce_enabled = False
+        self.kyber_s_hat = 1234  # secret NTT coefficient (matches firmware)
 
         self.last_seen_counter = -1
         self.encryption_count = 0
@@ -73,6 +75,21 @@ class VirtualESP32:
                 0, noise_std, size=per)
         self.encryption_count += 1
         self._log_request(counter.to_bytes(4, "big"))
+        return trace
+
+    # ---------- Kyber target: mirrors firmware KYBERLEAK ----------
+    def kyberleak_trace(self, u, n_samples=160, noise_std=2.0, leak_scale=1.0):
+        """Simulates firmware KYBERLEAK: leaks HW of the NTT pointwise product
+        t = s_hat * u mod q, sustained across the window. With masking on, an
+        additive mask r randomises the leaked share (t + r mod q), so the
+        first-order leak is decorrelated from the secret -- CPA fails."""
+        u = int(u) % KYBER_Q
+        t = pointwise(self.kyber_s_hat, u)
+        if self.masking_enabled:
+            t = (t + int(self.rng.integers(0, KYBER_Q))) % KYBER_Q
+        trace = self.rng.normal(0, noise_std, size=n_samples) + leak_scale * kyber_hw(t)
+        self.encryption_count += 1
+        self._log_request(int(u).to_bytes(2, "big"))
         return trace
 
     # ---------- Timing attack target: secret comparison ----------
