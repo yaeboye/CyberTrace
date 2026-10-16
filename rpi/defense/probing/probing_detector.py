@@ -242,11 +242,13 @@ class MLProbingDetector(ProbingDetector):
         }
 
 
-def build_trained_ml_detector(window_seconds=60, n_windows=120, events_per_window=20,
-                              seed=7, min_samples=10, margin_sigmas=3.0):
+def build_trained_ml_detector(window_seconds=60, n_windows=200, events_per_window=None,
+                              seed=7, min_samples=10, margin_sigmas=3.5):
     """Trains an MLProbingDetector on freshly simulated normal traffic and
-    returns it ready to use. Centralises training so the demo, tests, and
-    API all share one definition instead of re-rolling it inconsistently."""
+    returns it ready to use. Training windows use VARIED event counts (not a
+    fixed 20) so the model generalises across window sizes -- a detector trained
+    only on 20-event windows scores larger windows out-of-distribution and
+    behaves erratically. Centralises training so demo/tests/API agree."""
     detector = MLProbingDetector(window_seconds=window_seconds,
                                  min_samples=min_samples, margin_sigmas=margin_sigmas)
     if not detector.has_sklearn:
@@ -256,8 +258,9 @@ def build_trained_ml_detector(window_seconds=60, n_windows=120, events_per_windo
     features = []
     t = 0.0
     for _ in range(n_windows):
+        n_ev = events_per_window if events_per_window else int(rng.integers(12, 60))
         tmp = MLProbingDetector(window_seconds=window_seconds, min_samples=min_samples)
-        t = simulate_normal_traffic(tmp, rng, n_events=events_per_window, base_time=t)
+        t = simulate_normal_traffic(tmp, rng, n_events=n_ev, base_time=t)
         f = tmp._expanded_features()
         if f is not None:
             features.append(f)
