@@ -69,9 +69,18 @@ def _recover_a(counters, per_byte_traces):
     return a, bytes_info
 
 
-def _ntd_curve(counters, traces, per, steps=(50, 100, 200, 300, 400, 600, 800, 1200, 1600)):
+def _ntd_curve(counters, traces, per, steps=None):
     """Recover a at increasing trace counts; report the smallest count that
-    first yields the value the full set converges to (the NTD)."""
+    first yields the value the full set converges to (the NTD). The steps now
+    scale to the number of traces collected (geometric spacing up to the full
+    set), so the curve reflects the actual batch size rather than a fixed cap."""
+    n_total = len(counters)
+    if steps is None:
+        if n_total <= 50:
+            steps = [n_total]
+        else:
+            steps = sorted(set(int(x) for x in
+                               np.geomspace(50, n_total, num=10).astype(int)))
     full_a, _ = _recover_a(counters, [traces[:, b * per:(b + 1) * per] for b in range(4)])
     curve, ntd = [], None
     for n in steps:
