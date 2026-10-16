@@ -36,6 +36,16 @@ int last_seen_counter = -1;
 const uint8_t auth_secret[] = {'K', '3', 'Y', '!'};
 constexpr size_t kSecretLen = sizeof(auth_secret);
 
+// ──────────────── Kyber (post-quantum) side-channel target ────────────────
+// The leaking operation in Kyber is the NTT-domain pointwise multiplication of
+// the secret key with ciphertext-derived data: t = s_hat * u mod q. We hold one
+// secret NTT coefficient and, on KYBERLEAK <u>, compute the real product and
+// amplify HW(t) the same way LEAKLOOP does, so a CPA recovers s_hat on the slow
+// ADC. This is genuine Kyber arithmetic (mod q=3329) with a real secret, i.e.
+// a real PQC key-recovery target, not a leakage mock-up.
+constexpr uint16_t kKyberQ = 3329;
+uint16_t kyber_s_hat = 1234;  // secret NTT coefficient under attack
+
 // ──────────────── ChaCha20 primitives ────────────────
 
 inline uint32_t rotl32(uint32_t v, int n) {
@@ -265,6 +275,30 @@ void handleLeakLoop(const String &args) {
     Serial1.println("LEAKDONE");
 }
 
+void handleKyberLeak(const String &args) {
+    uint32_t u = hexToU32(args.c_str()) % kKyberQ;
+    uint16_t t = (uint16_t)(((uint32_t)kyber_s_hat * u) % kKyberQ);  // leaking product
+
+    // Amplify HW(t) over its 12 bits: each set bit toggles one leak pin per
+    // iteration, so sustained current over the loop scales with HW(t). Single
+    // phase -- one coefficient, one value.
+    digitalWrite(kTriggerPin, HIGH);
+    for (uint32_t it = 0; it < kLeakIter; it++) {
+        for (int bit = 0; bit < 12; bit++) {
+            if (t & (1 << bit)) {
+                int pin = kLeakPins[bit & 7];
+                digitalWrite(pin, HIGH);
+                digitalWrite(pin, LOW);
+            } else {
+                digitalWrite(kLeakDummyPin, LOW);
+                digitalWrite(kLeakDummyPin, LOW);
+            }
+        }
+    }
+    digitalWrite(kTriggerPin, LOW);
+    Serial1.println("KYBERDONE");
+}
+
 void handleCommand(String command) {
     command.trim();
 
@@ -284,6 +318,7 @@ void handleCommand(String command) {
 
     if      (verb == "ENCRYPT") handleEncrypt(args);
     else if (verb == "LEAKLOOP") handleLeakLoop(args);
+    else if (verb == "KYBERLEAK") handleKyberLeak(args);
     else if (verb == "CHECK")   handleCheck(args);
     else if (verb == "CMD")     handleCmd(args);
     else if (verb == "SET_KEY") handleSetKey(args);
