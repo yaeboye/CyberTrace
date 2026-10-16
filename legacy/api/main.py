@@ -212,24 +212,34 @@ def run_cpa_attack(req: AttackRequest, run_id: int):
         print(f"Hardware CPA failed ({e}), using simulated device for demo")
 
     if not hardware_succeeded:
+        sys.path.insert(0, str(ROOT / "attacker"))
+        import cpa as cpa_analysis  # richer analysis: NTD, per-byte confidence
         secret_key = 0xDEADBEEF
-        device = VirtualESP32(key_word=secret_key, seed=42)
-        rng = np.random.default_rng(100)
+        # Fresh random seed each run so the trace data (and hence NTD and the
+        # measured correlation) genuinely vary, as they would on hardware. The
+        # recovered key is of course always 0xDEADBEEF -- that IS the device key.
+        device = VirtualESP32(key_word=secret_key, seed=None)
+        rng = np.random.default_rng()
         counters = rng.integers(0, 2**32, size=req.num_traces, dtype=np.uint64).astype(np.uint32)
         traces = []
         for i, c in enumerate(counters):
-            traces.append(device.encrypt_with_trace(int(c)))
+            traces.append(device.leakloop_trace(int(c)))  # same model as hardware LEAKLOOP
             state.traces_collected = i + 1
             state.attack_progress = (i + 1) / req.num_traces * 100
+            if (i + 1) % 100 == 0:
+                time.sleep(0.12)  # pace so progress is visible (~1-2s, not instant)
         traces = np.stack(traces)
-        traces_per_byte = [traces[:, s - 20:s + 20] for s in BYTE_LEAK_SAMPLES]
-        recovered = recover_key_word(counters, traces_per_byte, verbose=False)
+        result = cpa_analysis.analyze(counters, traces)
+        recovered = result["recovered_key0"]
         state.attack_result = {
             "hardware": False,
             "recovered_key": f"0x{recovered:08x}",
             "actual_key": f"0x{secret_key:08x}",
             "match": recovered == secret_key,
             "traces_used": req.num_traces,
+            "ntd": result["ntd"],
+            "peak_correlation": round(result["mean_peak_corr"], 3),
+            "confidence": round(result["confidence"], 2),
         }
 
     state.attack_progress = 100.0
