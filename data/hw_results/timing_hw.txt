@@ -1,0 +1,11 @@
+[attacker] timing attack via hw, 25 trials/guess...
+
+  TIMING ANALYSIS
+  pos  byte  t_best(ms)  margin_to_2nd(us)
+   0   '0xee'     8.003        0.8
+   1     'f'     7.999        0.0
+   2   '0xae'    11.927       88.4
+   3     '('     8.003        0.4
+  recovered secret = b'\xeef\xae('
+  note: last byte has no iteration-count delta (known early-exit artifact)
+EXIT=0

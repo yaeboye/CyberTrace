@@ -1,0 +1,12 @@
+=== REPLAY nonce OFF ===
+[attacker] replay attack via hw
+  captured CMD counter=1042 -> accepted=True
+  replayed same packet       -> accepted=True
+  RESULT: replay SUCCEEDED (device vulnerable)
+[defender] nonce -> on  | device now: {'masking': False, 'constant_time': False, 'nonce': True}
+=== REPLAY nonce ON ===
+[attacker] replay attack via hw
+  captured CMD counter=1042 -> accepted=False
+  replayed same packet       -> accepted=False
+  RESULT: replay BLOCKED (nonce defense active)
+[defender] nonce -> off  | device now: {'masking': False, 'constant_time': False, 'nonce': False}

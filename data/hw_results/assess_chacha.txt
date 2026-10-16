@@ -1,0 +1,18 @@
+[defender] chacha leakage assessment via hw (masking off vs on)...
+
+==============================================================
+  LEAKAGE ASSESSMENT  (chacha, masking defense)
+==============================================================
+  metric                             OFF              ON
+  ------------------------------------------------------
+  TVLA peak |t|                      4.5             2.7
+  TVLA verdict                     LEAKS            PASS
+  CPA peak corr                    0.344           0.211
+  NTD (traces)                       400            None
+  key recovered               0xdeadbeef      0xfc092f23
+  ------------------------------------------------------
+  correlation suppression : 1.6x (4.3 dB)
+  TVLA                    : off: LEAKS (t=4.5) | on: PASS (t=2.7)
+  defense effective       : True
+==============================================================
+EXIT=0
