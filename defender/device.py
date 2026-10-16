@@ -27,6 +27,9 @@ class SimDefenderTransport:
     def leakloop(self, counter):
         return self._dev.leakloop_trace(int(counter))
 
+    def kyberleak(self, u):
+        return self._dev.kyberleak_trace(int(u))
+
     def set_defense(self, layer, enabled):
         setattr(self._dev, f"{layer}_enabled", bool(enabled))
 
@@ -57,8 +60,14 @@ class HwDefenderTransport:
         return self._uart.readline().strip()
 
     def leakloop(self, counter):
+        return self._sample_cmd(b"LEAKLOOP %08x\n" % int(counter))
+
+    def kyberleak(self, u):
+        return self._sample_cmd(b"KYBERLEAK %x\n" % (int(u) & 0xFFFFFFFF))
+
+    def _sample_cmd(self, cmd):
         self._uart.reset_input_buffer()
-        self._uart.write(b"LEAKLOOP %08x\n" % int(counter)); self._uart.flush()
+        self._uart.write(cmd); self._uart.flush()
         buf = []
         while not self._uart.in_waiting:
             buf.append(self._chan.voltage)

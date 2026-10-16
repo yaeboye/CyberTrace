@@ -25,11 +25,19 @@ from device import open_defender_transport
 
 def cmd_assess(args):
     tr = open_defender_transport(args)
-    print(f"[defender] leakage assessment via {tr.kind} (masking off vs on)...\n")
-    r = assess_mod.assess_masking(tr, n_traces=args.traces)
+    tgt = args.target
+    print(f"[defender] {tgt} leakage assessment via {tr.kind} (masking off vs on)...\n")
+    if tgt == "kyber":
+        r = assess_mod.assess_kyber(tr, n_traces=max(args.traces, 2000))
+        fmt = lambda v: f"{int(v)}"            # Kyber coefficient (decimal)
+        key_label = "s_hat recovered"
+    else:
+        r = assess_mod.assess_masking(tr, n_traces=args.traces)
+        fmt = lambda v: f"0x{int(v):08x}"      # ChaCha key word (hex)
+        key_label = "key recovered"
     off, on, s = r["off"], r["on"], r["summary"]
     print("=" * 62)
-    print("  LEAKAGE ASSESSMENT  (masking defense)")
+    print(f"  LEAKAGE ASSESSMENT  ({tgt}, masking defense)")
     print("=" * 62)
     print(f"  {'metric':<22}{'OFF':>16}{'ON':>16}")
     print("  " + "-" * 54)
@@ -38,8 +46,7 @@ def cmd_assess(args):
           f"{('LEAKS' if on['tvla_leaks'] else 'PASS'):>16}")
     print(f"  {'CPA peak corr':<22}{off['peak_corr']:>16.3f}{on['peak_corr']:>16.3f}")
     print(f"  {'NTD (traces)':<22}{str(off['ntd']):>16}{str(on['ntd']):>16}")
-    print(f"  {'key recovered':<22}{('0x%08x' % off['recovered_key0']):>16}"
-          f"{('0x%08x' % on['recovered_key0']):>16}")
+    print(f"  {key_label:<22}{fmt(off['recovered_key0']):>16}{fmt(on['recovered_key0']):>16}")
     print("  " + "-" * 54)
     print(f"  correlation suppression : {s['suppression_ratio']:.1f}x ({s['suppression_db']:.1f} dB)")
     print(f"  TVLA                    : {s['tvla_verdict']}")
@@ -108,6 +115,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     pa = sub.add_parser("assess")
+    pa.add_argument("--target", choices=["chacha", "kyber"], default="chacha")
     pa.add_argument("--traces", type=int, default=800)
     pa.add_argument("--out", default=str(root / "data" / "reports"))
     pa.add_argument("--no-plots", action="store_true")

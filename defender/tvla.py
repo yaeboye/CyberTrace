@@ -17,14 +17,18 @@ import numpy as np
 THRESHOLD = 4.5
 
 
-def collect_fixed_random(transport, n_each, fixed_counter=0x11111111, rng=None):
+def collect_fixed_random(transport, n_each, fixed_input=0x11111111,
+                         rand_hi=2**32, leak="leakloop", rng=None):
+    """Interleaved fixed-vs-random collection (TVLA best practice cancels slow
+    drift). `leak` names the transport method to measure (leakloop for ChaCha,
+    kyberleak for Kyber); `rand_hi` bounds the random input."""
     rng = rng or np.random.default_rng()
+    measure = getattr(transport, leak)
     fixed, rand = [], []
-    rand_counters = rng.integers(0, 2**32, size=n_each, dtype=np.uint64).astype(np.uint32)
-    # interleave to cancel slow drift, as TVLA best practice requires
+    rand_in = rng.integers(0, rand_hi, size=n_each)
     for i in range(n_each):
-        fixed.append(transport.leakloop(fixed_counter))
-        rand.append(transport.leakloop(int(rand_counters[i])))
+        fixed.append(measure(fixed_input))
+        rand.append(measure(int(rand_in[i])))
     L = min(min(len(r) for r in fixed), min(len(r) for r in rand))
     return (np.array([r[:L] for r in fixed]),
             np.array([r[:L] for r in rand]))
@@ -39,8 +43,10 @@ def welch_t(a, b):
     return (ma - mb) / denom
 
 
-def assess(transport, n_each=400, rng=None):
-    fixed, rand = collect_fixed_random(transport, n_each, rng=rng)
+def assess(transport, n_each=400, rng=None, leak="leakloop",
+           fixed_input=0x11111111, rand_hi=2**32):
+    fixed, rand = collect_fixed_random(transport, n_each, fixed_input=fixed_input,
+                                       rand_hi=rand_hi, leak=leak, rng=rng)
     t = welch_t(fixed, rand)
     peak = float(np.max(np.abs(t)))
     return {
