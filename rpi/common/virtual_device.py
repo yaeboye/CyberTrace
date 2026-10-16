@@ -6,7 +6,9 @@ import numpy as np
 
 _CPA_DIR = pathlib.Path(__file__).resolve().parents[1] / "attacks" / "cpa"
 sys.path.insert(0, str(_CPA_DIR))
-from chacha20_model import target_addition, hamming_weight_vec  # noqa: E402
+from chacha20_model import (  # noqa: E402
+    target_addition, first_round_xor_target, hamming_weight_vec,
+)
 
 BYTE_LEAK_SAMPLES = [60, 140, 200, 260]
 
@@ -47,6 +49,28 @@ class VirtualESP32:
             leakage = hamming_weight_vec(np.array([byte_val]))[0]
             trace[sample_idx] += leakage + self.rng.normal(0, noise_std)
 
+        self.encryption_count += 1
+        self._log_request(counter.to_bytes(4, "big"))
+        return trace
+
+    # ---------- Amplified-leakage target: mirrors firmware LEAKLOOP ----------
+    def leakloop_trace(self, counter, n_samples=240, noise_std=2.0, leak_scale=1.0):
+        """Simulates the firmware LEAKLOOP amplified-leakage trace: the real
+        first-round intermediate d = counter ^ (const0 + key0) (XOR-masked when
+        masking is on), with each byte's Hamming weight sustained across its
+        phase window -- matching the hardware so the attacker's first-round CPA
+        is identical in sim and on-device. Four equal phase windows."""
+        counter &= 0xFFFFFFFF
+        v = first_round_xor_target(counter, self.key_word)
+        if self.masking_enabled:
+            v ^= int(self.rng.integers(0, 2**32))
+
+        per = n_samples // 4
+        trace = self.rng.normal(0, noise_std, size=n_samples)
+        for j in range(4):
+            hw = int(hamming_weight_vec(np.array([(v >> (8 * j)) & 0xFF]))[0])
+            trace[j * per:(j + 1) * per] += leak_scale * hw + self.rng.normal(
+                0, noise_std, size=per)
         self.encryption_count += 1
         self._log_request(counter.to_bytes(4, "big"))
         return trace
