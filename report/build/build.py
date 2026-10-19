@@ -56,6 +56,10 @@ def main():
     r = subprocess.run([PY, str(HERE / "verify.py")], text=True)
     if r.returncode != 0:
         raise SystemExit("VERIFICATION FAILED - do not ship this build")
+
+    print("\n>>> spell check (advisory)")
+    subprocess.run([PY, str(HERE / "spellcheck.py")], text=True)
+
     print("\nBUILD OK")
 
 
