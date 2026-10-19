@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Generate the full CyberTrace BTech project report (.docx), VIT template."""
 import pathlib
+import re as _re
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
@@ -139,6 +140,60 @@ def caption_above(text):
     # table captions go ABOVE the table and stay with it on the same page
     p = center(text, 11, italic=True, space_after=4)
     p.paragraph_format.keep_with_next = True
+    return p
+
+
+_code_shot_idx = [0]
+def code_shot(lines, lang="cpp", max_width=5.6):
+    """Render a short code excerpt as a syntax-highlighted screenshot and embed
+    it centred in the body, so the running text carries pictures of code rather
+    than raw code. Full listings remain as text in the appendices."""
+    from pygments import highlight
+    from pygments.lexers import get_lexer_by_name
+    from pygments.formatters import ImageFormatter
+    from PIL import Image as _PILImage
+    _code_shot_idx[0] += 1
+    code = "\n".join(lines)
+    fmt = ImageFormatter(font_name="Consolas", font_size=26, line_numbers=False,
+                         style="friendly", image_pad=14)
+    out = FIG / f"code_body_{_code_shot_idx[0]}.png"
+    out.write_bytes(highlight(code, get_lexer_by_name(lang), fmt))
+    im = _PILImage.open(out)
+    w_in = min(max_width, im.width / 190.0)
+    p = doc.add_paragraph(); p.alignment = CENTER
+    p.add_run().add_picture(str(out), width=Inches(w_in))
+    para(space_after=8)
+    return p
+
+
+def _omml_for(latex):
+    """Return an OMML (m:oMath) element for a LaTeX string, or None on failure."""
+    if _OMML_XSLT is None:
+        return None
+    try:
+        mathml = _l2m.convert(latex)
+        omml = _OMML_XSLT(_etree.fromstring(mathml.encode())).getroot()
+        return parse_xml(_etree.tostring(omml, encoding="unicode"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def mathpara(text, align=None, space_after=8, line=None):
+    """A body paragraph that may contain inline math written as $...$ (LaTeX).
+    Each $...$ span becomes a real inline Office equation; the rest is text."""
+    p = doc.add_paragraph()
+    p.alignment = JUST if align is None else align
+    p.paragraph_format.space_after = Pt(space_after)
+    if line is not None:
+        p.paragraph_format.line_spacing = line
+    for part in _re.split(r"(\$[^$]+\$)", text):
+        if len(part) > 2 and part[0] == "$" and part[-1] == "$":
+            el = _omml_for(part[1:-1])
+            if el is not None:
+                p._p.append(el); continue
+            r = p.add_run(part[1:-1]); r.font.name = "Cambria Math"; r.font.size = Pt(12)
+        elif part:
+            run(p, part, 12)
     return p
 
 
@@ -439,13 +494,15 @@ def heading_for_toc(text, level=1):
 
 _chapters_started = [False]
 def ch(num, title):
-    # the body section already begins on a new page, so the first chapter must
-    # NOT add its own page break (that would leave the section's first page blank)
+    # attach the page break to the chapter heading (page_break_before) rather
+    # than a standalone break paragraph, which would leave a blank page when the
+    # previous chapter fills its last page. The first chapter needs no break --
+    # the body section already starts it on a new page.
+    h = heading_for_toc(f"CHAPTER {num}", 1)
     if _chapters_started[0]:
-        doc.add_page_break()
+        h.paragraph_format.page_break_before = True
     else:
         _chapters_started[0] = True
-    heading_for_toc(f"CHAPTER {num}", 1)
     center(title, 16, bold=True, caps=True, space_after=14)
 
 
@@ -790,23 +847,23 @@ body("Beyond the passive countermeasures above, an active defender can monitor t
      "reality, in which labelled examples of attacks are not available in advance.")
 
 sec_h("2.11  Mathematical Formulation of Correlation Power Analysis")
-body("The correlation attack may be stated precisely. Let there be N measured traces, the "
-     "i-th trace being a vector of power samples. For a key hypothesis k and a known input "
-     "x(i) for trace i, let v(i, k) denote the targeted intermediate value, for example "
-     "v = S(x XOR k) for an exclusive-or target, and let the predicted leakage under the "
-     "Hamming-weight model be h(i, k) = HW(v(i, k)), the number of one-bits in v. For each time "
-     "sample j the attacker computes the Pearson correlation between the column of predictions "
-     "h(., k) and the column of measurements t(., j):")
+mathpara("The correlation attack may be stated precisely. Let there be $N$ measured traces, "
+     "the $i$-th trace being a vector of power samples. For a key hypothesis $k$ and a known "
+     "input $x(i)$ for trace $i$, let $v(i,k)$ denote the targeted intermediate value, for "
+     "example $v = S(x \\oplus k)$ for an exclusive-or target, and let the predicted leakage "
+     "under the Hamming-weight model be $h(i,k) = \\mathrm{HW}(v(i,k))$, the number of one-bits "
+     "in $v$. For each time sample $j$ the attacker computes the Pearson correlation between the "
+     "column of predictions $h(\\cdot,k)$ and the column of measurements $t(\\cdot,j)$:")
 equation(r"r(k,j) = \frac{\operatorname{cov}\left(h(\cdot,k),\, t(\cdot,j)\right)}"
          r"{\sigma_h(k)\,\sigma_t(j)}")
 body("where cov denotes the sample covariance over the N traces and sigma denotes the sample "
      "standard deviation. The recovered hypothesis is the one that maximises the correlation "
      "over all samples,")
 equation(r"k^{*} = \mathrm{argmax}_{k}\, \max_{j}\, \left| r(k,j) \right|")
-body("for an addition target, while for an exclusive-or target the signed maximum "
-     "k* = argmax_k max_j r(k, j) is used instead, so that the signed value breaks the "
-     "complement symmetry. The expected magnitude of the correct correlation "
-     "grows with the signal-to-noise ratio and falls as the inverse square root of N for the "
+mathpara("for an addition target, while for an exclusive-or target the signed maximum "
+     "$k^{*} = \\mathrm{argmax}_{k}\\,\\max_{j}\\, r(k,j)$ is used instead, so that the signed "
+     "value breaks the complement symmetry. The expected magnitude of the correct correlation "
+     "grows with the signal-to-noise ratio and falls as the inverse square root of $N$ for the "
      "incorrect hypotheses, which is why the correct key separates from the field as traces "
      "accumulate and why the number of traces to disclosure is a meaningful measure.")
 
@@ -1101,22 +1158,22 @@ body("The firmware implements the ChaCha20 block function, the Kyber pointwise m
      "flag. The essential difference between the two forms is that the constant-time branch "
      "always scans the full secret length whereas the early-exit branch returns at the first "
      "mismatching byte, so that its response time depends on how many bytes match:")
-code(["// constant-time:  for (i=0;i<SECRET_LEN;i++) diff |= cand[i]^secret[i];",
-      "// early-exit:     for (i=0;i<len;i++) if (cand[i]!=secret[i]) break;"])
-body("The full authentication routine is listed in Appendix 19. The amplified first-round "
-     "routine computes the real intermediate d = counter XOR (const0 + key0), applies the random "
-     "mask when masking is enabled, and then, within a trigger-delimited window, toggles the "
-     "leak pins in proportion to the Hamming weight of each byte across four equal phases, as the "
-     "following two lines capture:")
-code(["uint32_t v = (counter ^ (kConstants[0] + chacha_key[0])) ^ mask;  // masked target",
-      "for (k=0;k<8;k++) if (b&(1<<k)) { pin_high(k); pin_low(k); }       // toggles ~ HW(b)"])
-body("The complete routine, including the four-phase loop and the constant-time dummy path, is "
-     "listed in Appendix 20. The Kyber routine is analogous: it computes the real pointwise "
-     "product t = s_hat * u mod q of the secret coefficient with the attacker-supplied value and "
-     "amplifies the Hamming weight of that twelve-bit product in the same manner, as shown below; "
-     "the full routine is in Appendix 21.")
-code(["uint16_t t = (kyber_s_hat * u) % KYBER_Q;     // secret-dependent product",
-      "for (bit=0;bit<12;bit++) if (t&(1<<bit)) { pin_high(bit&7); pin_low(bit&7); }"])
+code_shot(["// constant-time:  for (i=0;i<SECRET_LEN;i++) diff |= cand[i]^secret[i];",
+           "// early-exit:     for (i=0;i<len;i++) if (cand[i]!=secret[i]) break;"], "cpp")
+mathpara("The full authentication routine is listed in Appendix 19. The amplified first-round "
+     "routine computes the real intermediate $d = \\mathrm{counter} \\oplus (\\mathrm{const}_0 + "
+     "\\mathrm{key}_0)$, applies the random mask when masking is enabled, and then, within a "
+     "trigger-delimited window, toggles the leak pins in proportion to the Hamming weight of each "
+     "byte across four equal phases, as the following two lines capture:")
+code_shot(["uint32_t v = (counter ^ (kConstants[0] + chacha_key[0])) ^ mask;  // masked target",
+           "for (k=0;k<8;k++) if (b&(1<<k)) { pin_high(k); pin_low(k); }       // toggles ~ HW(b)"], "cpp")
+mathpara("The complete routine, including the four-phase loop and the constant-time dummy path, "
+     "is listed in Appendix 20. The Kyber routine is analogous: it computes the real pointwise "
+     "product $t = \\hat{s} \\cdot u \\text{ mod } q$ of the secret coefficient with the attacker-"
+     "supplied value and amplifies the Hamming weight of that twelve-bit product in the same "
+     "manner, as shown below; the full routine is in Appendix 21.")
+code_shot(["uint16_t t = (kyber_s_hat * u) % KYBER_Q;     // secret-dependent product",
+           "for (bit=0;bit<12;bit++) if (t&(1<<bit)) { pin_high(bit&7); pin_low(bit&7); }"], "cpp")
 
 sec_h("4.3  The Shared Cryptographic Engine")
 body("The shared engine implements the Hamming-weight model, the correlation computation, and "
@@ -1126,8 +1183,8 @@ body("The shared engine implements the Hamming-weight model, the correlation com
      "byte selects the candidate of largest signed correlation, as required to disambiguate a "
      "key byte from its complement, as the two central lines show; the full per-byte analysis is "
      "listed in Appendix 9.")
-code(["corr = correlation_matrix(hamming_weight_vec(known ^ guesses), traces)",
-      "best = int(np.argmax(corr.max(axis=1)))   # signed peak resolves the complement"])
+code_shot(["corr = correlation_matrix(hamming_weight_vec(known ^ guesses), traces)",
+           "best = int(np.argmax(corr.max(axis=1)))   # signed peak resolves the complement"], "python")
 
 sec_h("4.4  The Attacker Program")
 body("The attacker program is a self-contained command-line tool that can only observe the "
