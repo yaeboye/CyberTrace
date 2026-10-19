@@ -6,13 +6,33 @@ from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.enum.section import WD_SECTION
 from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
+from docx.oxml import OxmlElement, parse_xml
+import latex2mathml.converter as _l2m
+from lxml import etree as _etree
+
+# Word's MathML -> OMML stylesheet (ships with Office); lets us insert real
+# Office equations (editable with Alt+=), not pictures of formulas.
+_MML2OMML = r"C:\Program Files\Microsoft Office\root\Office16\MML2OMML.XSL"
+try:
+    _OMML_XSLT = _etree.XSLT(_etree.parse(_MML2OMML))
+except Exception:  # noqa: BLE001
+    _OMML_XSLT = None
 
 BLACK = RGBColor(0, 0, 0)
 FONT = "Times New Roman"
 FIG = pathlib.Path(r"C:\Users\satvi\CyberTrace\data\reports")
 LOGO = pathlib.Path(r"C:\Users\satvi\CyberTrace\report\assets\image2.png")
-OUT = pathlib.Path(r"C:\Users\satvi\CyberTrace\report\CyberTrace_Project_Report.docx")
+import os as _os
+# All team members (shown on the cover/title page). Each member submits their
+# own copy whose Declaration / Certificate / Acknowledgement carry ONLY their
+# name, per the VIT template. Pick the copy via the CT_CANDIDATE env var (0-2).
+MEMBERS = [("Satvik Jindal", "23BPS1123"),
+           ("Sushrut Koundinya", "23BPS1036"),
+           ("Lakshay Tomar", "23BPS1177")]
+_idx = int(_os.environ.get("CT_CANDIDATE", "0"))
+CANDIDATE_NAME, CANDIDATE_REG = MEMBERS[_idx]
+_SUFFIX = CANDIDATE_NAME.split()[0]
+OUT = pathlib.Path(r"C:\Users\satvi\CyberTrace\report") / f"CyberTrace_Project_Report_{_SUFFIX}.docx"
 
 doc = Document()
 st = doc.styles["Normal"]
@@ -83,6 +103,20 @@ def bullet(text):
     p.paragraph_format.space_after = Pt(3); return p
 
 
+def _keep_table_together(t):
+    # keep a table that fits on one page from being split across a page break:
+    # no row splits internally (cantSplit) and every row but the last is kept
+    # with the next, so the whole table moves as a unit. A table too tall for
+    # one page still flows naturally across pages (Word overrides keep-with-next).
+    n = len(t.rows)
+    for ri, row in enumerate(t.rows):
+        trPr = row._tr.get_or_add_trPr()
+        trPr.append(OxmlElement("w:cantSplit"))
+        for cell in row.cells:
+            for p in cell.paragraphs:
+                p.paragraph_format.keep_with_next = ri < n - 1
+
+
 def table(headers, rows):
     t = doc.add_table(rows=1, cols=len(headers)); t.style = "Table Grid"
     for i, h in enumerate(headers):
@@ -92,12 +126,38 @@ def table(headers, rows):
         cells = t.add_row().cells
         for i, v in enumerate(row):
             cells[i].paragraphs[0].text = ""; run(cells[i].paragraphs[0], str(v), 11)
-    para(space_after=6)
+    _keep_table_together(t)
+    para(space_after=10)
     return t
 
 
 def caption(text):
     center(text, 11, italic=True, space_after=12)
+
+
+def caption_above(text):
+    # table captions go ABOVE the table and stay with it on the same page
+    p = center(text, 11, italic=True, space_after=4)
+    p.paragraph_format.keep_with_next = True
+    return p
+
+
+def equation(latex, space_after=12):
+    """Insert a centred display equation as a real Office math object (editable
+    with Alt+=), built from LaTeX via MathML -> OMML. Falls back to monospace
+    text if the Office stylesheet is unavailable."""
+    p = doc.add_paragraph(); p.alignment = CENTER
+    p.paragraph_format.space_before = Pt(6); p.paragraph_format.space_after = Pt(space_after)
+    if _OMML_XSLT is not None:
+        try:
+            mathml = _l2m.convert(latex)
+            omml = _OMML_XSLT(_etree.fromstring(mathml.encode())).getroot()
+            p._p.append(parse_xml(_etree.tostring(omml, encoding="unicode")))
+            return p
+        except Exception:  # noqa: BLE001
+            pass
+    r = p.add_run(latex); r.font.name = "Cambria Math"; r.font.size = Pt(12)
+    return p
 
 
 def figure(path, cap, width=5.8):
@@ -153,11 +213,11 @@ def title_page():
     center("Submitted in partial fulfillment for the award of the degree of", 13, italic=True, space_after=8)
     center(DEGREE, 20, bold=True, space_after=12)
     center("by", 13, italic=True, space_after=8)
-    center("SATVIK JINDAL (Reg. No.: 23BPS1123)", 15, bold=True, space_after=3)
-    center("SUSHRUT KOUNDINYA (Reg. No.: 23BPS1036)", 15, bold=True, space_after=3)
-    center("LAKSHAY TOMAR (Reg. No.: 23BPS1177)", 15, bold=True, space_after=12)
+    for _mi, (_name, _reg) in enumerate(MEMBERS):
+        center(f"{_name.upper()} (Reg. No.: {_reg})", 15, bold=True,
+               space_after=(12 if _mi == len(MEMBERS) - 1 else 3))
     center("SCHOOL OF COMPUTER SCIENCE AND ENGINEERING", 15, bold=True, caps=True, space_after=10)
-    center("November, 2025", 13, bold=True, space_after=6)
+    center("October, 2026", 13, bold=True, space_after=6)
 
 
 # ============ COVER / TITLE ============
@@ -166,28 +226,26 @@ title_page()
 # ============ DECLARATION ============
 doc.add_page_break()
 fmheading("DECLARATION")
-body("We hereby declare that the project report entitled \u201c" + TITLE + "\u201d submitted "
-     "by us to the School of Computer Science and Engineering, Vellore Institute of "
-     "Technology, Chennai, for the award of the degree of " + DEGREE + ", is a record of "
-     "bonafide work carried out by us under the supervision of " + GUIDE + ".")
-body("We further declare that the work reported in this project report has not been "
+body("I hereby declare that the project report entitled \u201c" + TITLE + "\u201d submitted "
+     "by " + CANDIDATE_NAME + " (Reg. No.: " + CANDIDATE_REG + "), for the award of the degree "
+     "of " + DEGREE + ", Vellore Institute of Technology, Chennai, is a record of bonafide work "
+     "carried out by me under the supervision of " + GUIDE + ".")
+body("I further declare that the work reported in this project report has not been "
      "submitted and will not be submitted, either in part or in full, for the award of any "
      "other degree or diploma in this institute or any other institute or university.")
-para(space_after=24)
+para(space_after=30)
 para("Place: Chennai")
-para("Date: 16 October 2026", space_after=18)
-para("Satvik Jindal", bold=True)
-para("Sushrut Koundinya", bold=True)
-para("Lakshay Tomar", bold=True)
-para("Signature of the Candidates", bold=True)
+para("Date: 19 October 2026", space_after=24)
+para(CANDIDATE_NAME, bold=True)
+para("Signature of the Candidate", bold=True)
 
 # ============ CERTIFICATE ============
 doc.add_page_break()
 center("School of Computer Science and Engineering", 12, bold=True, space_after=12)
 fmheading("CERTIFICATE")
 body("This is to certify that the report entitled \u201c" + TITLE + "\u201d is prepared and "
-     "submitted by Satvik Jindal (Reg. No.: 23BPS1123), Sushrut Koundinya (Reg. No.: 23BPS1036) "
-     "and Lakshay Tomar (Reg. No.: 23BPS1177) to Vellore Institute of Technology, Chennai, in partial fulfillment of the "
+     "submitted by " + CANDIDATE_NAME + " (Reg. No.: " + CANDIDATE_REG + ") to Vellore Institute "
+     "of Technology, Chennai, in partial fulfillment of the "
      "requirement for the award of the degree of " + DEGREE + " is a bonafide record carried "
      "out under my guidance. The project fulfills the requirements as per the regulations of "
      "this University and in my opinion meets the necessary standards for submission. The "
@@ -204,15 +262,18 @@ p = para(space_after=4); run(p, "Name:                                          
 p = para(space_after=8); run(p, "Date:                                                                 Date:")
 para("Approved by the Head of Department,")
 para("Computer Science and Engineering (Cyber Physical Systems)", bold=True)
-para("Name: Dr. S. Renuka Devi", bold=True, space_before=6)
+para("Signature:", space_before=10, space_after=28)   # blank space for the HoD signature
+para("Name: Dr. S. Renuka Devi", bold=True)
 para("Date:", space_after=6)
 para("(Seal of School of Computer Science and Engineering)", italic=True)
 
 print("front matter 1 done")
 
 # ============ ABSTRACT ============
-doc.add_page_break()
-fmheading("ABSTRACT")
+# page_break_before on the heading (not a standalone break paragraph) so a full
+# certificate page does not leave a blank page before the abstract
+_abs_h = fmheading("ABSTRACT")
+_abs_h.paragraph_format.page_break_before = True
 body("Cyber-physical systems embed computation and cryptography inside devices that act "
      "directly on the physical world, so the secrecy of the cryptographic keys those devices "
      "hold is a matter of physical safety and not of data confidentiality alone. A "
@@ -286,12 +347,10 @@ ackp("Our sincere thanks to all the faculty members and staff at Vellore Institu
      "project successfully. We would like to thank our parents for their support, and it is "
      "indeed a pleasure to thank our friends who encouraged us to take up and complete this "
      "task.")
-para(space_after=2)
-para("Place: Chennai", line=1.1)
-para("Date: 16 October 2026", space_after=4, line=1.1)
-para("Satvik Jindal", bold=True, line=1.15)
-para("Sushrut Koundinya", bold=True, line=1.15)
-para("Lakshay Tomar", bold=True, line=1.15)
+para(space_after=6)
+para("Place: Chennai", line=1.15)
+para("Date: 19 October 2026", space_after=6, line=1.15)
+para(CANDIDATE_NAME, bold=True, line=1.15)
 
 print("front matter 2 done")
 
@@ -302,9 +361,7 @@ print("front matter 2 done")
 _toc_h = fmheading("TABLE OF CONTENTS")
 _toc_h.paragraph_format.page_break_before = True
 p = doc.add_paragraph()
-field(p, 'TOC \\o "1-2" \\h \\z \\u')
-para("(Right-click and choose “Update Field” in Word to populate page numbers.)",
-     10, italic=True, space_after=6)
+field(p, 'TOC \\o "1-2" \\z \\u')  # no \h -> plain text entries, not hyperlinks
 
 # ============ LIST OF FIGURES ============
 doc.add_page_break()
@@ -337,7 +394,10 @@ for t in ["Table 2.1   Summary of related work",
           "Table 5.4   Timing and replay attack outcomes",
           "Table 5.5   Probing-detection analytics",
           "Table 5.6   Consolidated summary of results",
-          "Table 5.7   Simulation versus hardware, consolidated"]:
+          "Table 5.7   Simulation versus hardware, consolidated",
+          "Table 5.8   Kyber coefficient CPA: strongest candidates (hardware)",
+          "Table 5.9   Per-byte hardware CPA detail",
+          "Table 5.10  Hardware CPA convergence with trace count"]:
     para(t, 12, line=1.0)
 
 # ============ LIST OF ACRONYMS ============
@@ -546,8 +606,9 @@ body("This chapter establishes the technical background on which the project res
 sec_h("2.2  Foundations of Side-Channel Analysis")
 body("The study of side-channel attacks on cryptographic devices is usually dated to the work "
      "of Kocher in the late 1990s, who showed first that the time taken by modular "
-     "exponentiation leaks the exponent, and subsequently, with Jaffe and Jun, that the power "
-     "consumed by a device performing encryption leaks the key. The central physical fact is "
+     "exponentiation leaks the exponent (Kocher, 1996), and subsequently, with Jaffe and Jun, "
+     "that the power consumed by a device performing encryption leaks the key (Kocher et al., "
+     "1999). The central physical fact is "
      "that a complementary metal-oxide-semiconductor circuit draws current chiefly when its "
      "logic gates switch, and the number of gates that switch in a given cycle depends on the "
      "values being manipulated. Two leakage models capture this dependence. The Hamming-weight "
@@ -593,7 +654,7 @@ body("The power of the statistical approach rests on a simple principle. The dat
      "natural currency of both attack and defense.")
 
 sec_h("2.4  Correlation Power Analysis")
-body("Correlation power analysis, formalised by Brier, Clavier, and Olivier, refines the "
+body("Correlation power analysis, formalised by Brier, Clavier, and Olivier (2004), refines the "
      "differential approach using the Pearson correlation coefficient and an explicit leakage "
      "model. For each candidate value of a small portion of the key — typically a single "
      "byte — the attacker computes, for every collected trace, the predicted leakage of a "
@@ -618,7 +679,7 @@ body("A subtlety of correlation power analysis that proved important in this pro
 
 sec_h("2.5  Template and Profiled Attacks")
 body("A more powerful but more demanding class of attacks, the template or profiled attacks "
-     "introduced by Chari, Rao, and Rohatgi, assumes that the attacker possesses a device "
+     "introduced by Chari, Rao, and Rohatgi (2002), assumes that the attacker possesses a device "
      "identical to the target and under full control. In a profiling phase the attacker "
      "characterises the probability distribution of the leakage for each possible value of the "
      "targeted intermediate; in the attack phase a very small number of traces from the target, "
@@ -628,8 +689,9 @@ body("A more powerful but more demanding class of attacks, the template or profi
      "as a planned extension.")
 
 sec_h("2.6  The ChaCha20 Stream Cipher")
-body("ChaCha20, designed by Bernstein, is a modern stream cipher that has been adopted in "
-     "Transport Layer Security version 1.3, in the WireGuard virtual private network, and in "
+body("ChaCha20, designed by Bernstein (2008), is a modern stream cipher that has been adopted "
+     "in Transport Layer Security version 1.3 (Nir & Langley, 2018), in the WireGuard virtual "
+     "private network, and in "
      "several other widely used protocols. It was designed in part to resist timing attacks, "
      "because it is built entirely from three constant-time operations — addition modulo "
      "two to the thirty-two, bitwise rotation, and exclusive-or — and contains no "
@@ -650,8 +712,9 @@ body("The public-key algorithms in widespread use today, including those based o
      "large quantum computer running Shor's algorithm. In anticipation of this threat the "
      "United States National Institute of Standards and Technology conducted a multi-year "
      "process to standardise quantum-resistant algorithms, and in 2024 published the "
-     "module-lattice-based key-encapsulation mechanism, derived from CRYSTALS-Kyber, as a "
-     "federal standard. Kyber's security rests on the presumed hardness of the module "
+     "module-lattice-based key-encapsulation mechanism, derived from CRYSTALS-Kyber (Bos et al., "
+     "2018), as a federal standard (NIST, 2024). Kyber's security rests on the presumed hardness "
+     "of the module "
      "learning-with-errors problem over polynomial rings. Its core arithmetic multiplies "
      "polynomials efficiently using the number-theoretic transform, a finite-field analogue of "
      "the fast Fourier transform, within which a polynomial product reduces to a pointwise "
@@ -659,12 +722,15 @@ body("The public-key algorithms in widespread use today, including those based o
      "represented in the transform domain, is multiplied coefficient by coefficient with data "
      "derived from the ciphertext. That secret-dependent multiplication is the point of attack "
      "for power analysis, and it has been the subject of recent research, including the "
-     "single-trace attacks of Pessl and Primas. The significance for a migrating world is "
+     "single-trace attacks on masked lattice-based encryption of Primas, Pessl, and Mangard "
+     "(2017) and Pessl and Primas (2019), surveyed more broadly by Ravi et al. (2023). The "
+     "significance for a migrating world is "
      "direct: although Kyber resists quantum attack, an unprotected embedded implementation "
      "leaks its secret through power exactly as a classical cipher does.")
 
 sec_h("2.8  Countermeasures")
-body("The standard algorithmic countermeasure against power analysis is masking. In a "
+body("The standard algorithmic countermeasure against power analysis is masking (Mangard et "
+     "al., 2007). In a "
      "first-order Boolean masking scheme every sensitive value is combined, by exclusive-or, "
      "with a freshly generated random mask before it is processed, and the computation is "
      "rearranged so that it operates on the masked value and on the mask separately. Because "
@@ -700,7 +766,8 @@ body("Each countermeasure carries a cost that a designer must weigh. Masking mul
 sec_h("2.9  Leakage Assessment")
 body("To decide whether exploitable leakage remains after a countermeasure has been applied, "
      "evaluators use Test Vector Leakage Assessment, a methodology introduced by Goodwill and "
-     "colleagues and now embedded in international standards for the validation of "
+     "colleagues (Goodwill et al., 2011) and now embedded in international standards for the "
+     "validation of "
      "side-channel resistance. In its non-specific form the method collects two populations of "
      "traces, one taken with a fixed input and one with random inputs, and computes, at every "
      "time sample, Welch's t-statistic between the two populations. If the statistic exceeds a "
@@ -716,7 +783,8 @@ body("Beyond the passive countermeasures above, an active defender can monitor t
      "progress. Because collecting enough traces for a power attack requires issuing a large "
      "number of structured requests in a short time, trace collection produces a statistical "
      "signature distinct from ordinary use. Detecting that signature is an anomaly-detection "
-     "problem, and a natural tool is the isolation forest, an unsupervised ensemble method that "
+     "problem, and a natural tool is the isolation forest (Liu et al., 2008), an unsupervised "
+     "ensemble method that "
      "isolates anomalous points by random partitioning and that requires only examples of "
      "normal behaviour for training. Training only on normal traffic matches the deployment "
      "reality, in which labelled examples of attacks are not available in advance.")
@@ -729,12 +797,15 @@ body("The correlation attack may be stated precisely. Let there be N measured tr
      "Hamming-weight model be h(i, k) = HW(v(i, k)), the number of one-bits in v. For each time "
      "sample j the attacker computes the Pearson correlation between the column of predictions "
      "h(., k) and the column of measurements t(., j):")
-body("    r(k, j) = cov( h(.,k), t(.,j) ) / ( sigma_h(k) * sigma_t(j) ),")
+equation(r"r(k,j) = \frac{\operatorname{cov}\left(h(\cdot,k),\, t(\cdot,j)\right)}"
+         r"{\sigma_h(k)\,\sigma_t(j)}")
 body("where cov denotes the sample covariance over the N traces and sigma denotes the sample "
      "standard deviation. The recovered hypothesis is the one that maximises the correlation "
-     "over all samples, k* = argmax_k ( max_j | r(k, j) | ) for an addition target, or "
-     "argmax_k ( max_j r(k, j) ) for an exclusive-or target where the signed value must be "
-     "used to break the complement symmetry. The expected magnitude of the correct correlation "
+     "over all samples,")
+equation(r"k^{*} = \mathrm{argmax}_{k}\, \max_{j}\, \left| r(k,j) \right|")
+body("for an addition target, while for an exclusive-or target the signed maximum "
+     "k* = argmax_k max_j r(k, j) is used instead, so that the signed value breaks the "
+     "complement symmetry. The expected magnitude of the correct correlation "
      "grows with the signal-to-noise ratio and falls as the inverse square root of N for the "
      "incorrect hypotheses, which is why the correct key separates from the field as traces "
      "accumulate and why the number of traces to disclosure is a meaningful measure.")
@@ -742,7 +813,9 @@ body("where cov denotes the sample covariance over the N traces and sigma denote
 sec_h("2.12  Leakage Assessment: Statistical Basis")
 body("Test Vector Leakage Assessment compares two trace populations, one gathered with a fixed "
      "input, the other with random inputs. At each sample the Welch t-statistic is")
-body("    t = ( mean_fixed - mean_random ) / sqrt( var_fixed / n_fixed + var_random / n_random ),")
+equation(r"t = \frac{\mu_{\mathrm{fixed}} - \mu_{\mathrm{random}}}"
+         r"{\sqrt{\dfrac{s^{2}_{\mathrm{fixed}}}{n_{\mathrm{fixed}}} + "
+         r"\dfrac{s^{2}_{\mathrm{random}}}{n_{\mathrm{random}}}}}")
 body("which measures the difference of the two sample means in units of their combined standard "
      "error. Under the null hypothesis that the two populations are drawn from the same "
      "distribution, the statistic is approximately standard normal, so a magnitude exceeding "
@@ -755,6 +828,7 @@ sec_h("2.13  Summary of Related Work")
 body("Table 2.1 summarises the principal prior work on which this project builds, spanning the "
      "foundational attacks, the targeted primitives, the countermeasures, and the evaluation "
      "methodology.")
+caption_above("Table 2.1  Summary of related work")
 table(["Work", "Contribution relevant to this project"],
       [["Kocher (1996)", "Timing attacks on public-key implementations"],
        ["Kocher, Jaffe & Jun (1999)", "Simple and differential power analysis"],
@@ -773,7 +847,6 @@ table(["Work", "Contribution relevant to this project"],
        ["Pessl & Primas (2019)", "Practical single-trace attacks on the NTT"],
        ["Ravi et al. (2023)", "Survey of side-channel and fault attacks on PQC"],
        ["Liu, Ting & Zhou (2008)", "Isolation forest for unsupervised anomaly detection"]])
-caption("Table 2.1  Summary of related work")
 
 sec_h("2.14  Summary of the Literature")
 body("The literature establishes that power analysis, and correlation power analysis in "
@@ -915,13 +988,13 @@ body("For the amplified acquisition the firmware leaks each of the four bytes of
      "of the data, the phase boundaries fall at fixed positions and do not themselves leak, a "
      "property engineered deliberately after an earlier design, in which low-Hamming-weight "
      "bytes completed faster, was found to couple the phase timing to the quantity attacked.")
+caption_above("Table 3.1  Attack vectors and the countermeasures that defeat them")
 table(["Attack vector", "What it exploits", "Countermeasure"],
       [["Correlation power analysis", "Data-dependent power in the ChaCha20 first round", "Boolean masking"],
        ["Timing attack", "Early-exit comparison in authentication", "Constant-time comparison"],
        ["Replay attack", "Absence of freshness in commands", "Nonce and monotonic counter"],
        ["Kyber coefficient CPA", "Power during the NTT pointwise multiply", "Masking of the secret share"],
        ["Trace collection (any)", "Statistical signature of probing traffic", "Probing detection and key refresh"]])
-caption("Table 3.1  Attack vectors and the countermeasures that defeat them")
 
 sec_h("3.5  Defense Design")
 body("Each attack is met by a countermeasure that lives in the device. Masking defeats the "
@@ -965,6 +1038,7 @@ sec_h("3.7  Command Interface")
 body("The target exposes a small command interface over the serial link, summarised in Table "
      "3.2, through which the attacker issues legitimate operations and the defender additionally "
      "configures countermeasures and installs keys.")
+caption_above("Table 3.2  Target device command interface")
 table(["Command", "Issued by", "Purpose"],
       [["ENCRYPT", "Attacker / Defender", "Perform a ChaCha20 block encryption"],
        ["LEAKLOOP", "Attacker / Defender", "Amplified first-round computation for power CPA"],
@@ -973,7 +1047,6 @@ table(["Command", "Issued by", "Purpose"],
        ["CMD", "Attacker", "Authenticated command (replay target)"],
        ["DEFENSE", "Defender only", "Enable or disable a countermeasure"],
        ["SET_KEY", "Defender only", "Install a new device key (key refresh)"]])
-caption("Table 3.2  Target device command interface")
 
 sec_h("3.8  The Software Model")
 body("To permit development and evaluation without continuous access to the hardware, the "
@@ -1025,56 +1098,25 @@ body("The firmware implements the ChaCha20 block function, the Kyber pointwise m
      "byte of the intermediate across four equal phases so that the host can slice the window "
      "into the four byte positions. The authentication check is provided in two forms, an "
      "early-exit form and a constant-time form, selected by the constant-time countermeasure "
-     "flag. The following excerpt shows the structure of the authentication check.")
-code(["void handleCheck(const String &args) {",
-      "    // ... parse candidate bytes ...",
-      "    bool accepted;",
-      "    if (constant_time_enabled) {",
-      "        uint8_t diff = (len != SECRET_LEN) ? 1 : 0;",
-      "        for (size_t i = 0; i < SECRET_LEN; i++)",
-      "            diff |= candidate[i] ^ auth_secret[i];   // always full length",
-      "        accepted = (diff == 0);",
-      "    } else {",
-      "        accepted = (len == SECRET_LEN);",
-      "        for (size_t i = 0; i < len; i++)",
-      "            if (candidate[i] != auth_secret[i]) { accepted = false; break; }",
-      "    }",
-      "    Serial1.println(accepted ? \"OK\" : \"FAIL\");",
-      "}"])
-body("The amplified first-round routine computes the real intermediate, applies the random "
-     "mask when masking is enabled, and then toggles the leak pins in proportion to the "
-     "Hamming weight of each byte across four equal phases. The structure is shown below.")
-code(["void handleLeakLoop(const String &args) {",
-      "    uint32_t counter = hexToU32(args.c_str());",
-      "    uint32_t a = (kConstants[0] + chacha_key[0]);     // const0 + key0",
-      "    uint32_t d = counter ^ a;                          // first-round XOR target",
-      "    uint32_t mask = masking_enabled ? esp_random() : 0;",
-      "    uint32_t v = d ^ mask;                             // masked when enabled",
-      "    digitalWrite(TRIGGER, HIGH);",
-      "    for (int j = 0; j < 4; j++) {                      // one phase per byte",
-      "        uint8_t b = (v >> (8*j)) & 0xFF;",
-      "        for (uint32_t it = 0; it < ITER; it++)",
-      "            for (int k = 0; k < 8; k++)",
-      "                if (b & (1<<k)) { pin_high(k); pin_low(k); }  // toggles ~ HW(b)",
-      "                else            { dummy_low();  dummy_low();  } // constant time",
-      "    }",
-      "    digitalWrite(TRIGGER, LOW);",
-      "    Serial1.println(\"LEAKDONE\");",
-      "}"])
-body("The Kyber routine is analogous: it computes the real pointwise product of the secret "
-     "coefficient with the attacker-supplied value modulo the Kyber prime, and amplifies the "
-     "Hamming weight of that twelve-bit product in the same manner.")
-code(["void handleKyberLeak(const String &args) {",
-      "    uint32_t u = hexToU32(args.c_str()) % KYBER_Q;",
-      "    uint16_t t = (kyber_s_hat * u) % KYBER_Q;          // secret-dependent product",
-      "    digitalWrite(TRIGGER, HIGH);",
-      "    for (uint32_t it = 0; it < ITER; it++)",
-      "        for (int bit = 0; bit < 12; bit++)             // 12-bit coefficient",
-      "            if (t & (1<<bit)) { pin_high(bit & 7); pin_low(bit & 7); }",
-      "            else              { dummy_low(); dummy_low(); }",
-      "    digitalWrite(TRIGGER, LOW);",
-      "    Serial1.println(\"KYBERDONE\");",
-      "}"])
+     "flag. The essential difference between the two forms is that the constant-time branch "
+     "always scans the full secret length whereas the early-exit branch returns at the first "
+     "mismatching byte, so that its response time depends on how many bytes match:")
+code(["// constant-time:  for (i=0;i<SECRET_LEN;i++) diff |= cand[i]^secret[i];",
+      "// early-exit:     for (i=0;i<len;i++) if (cand[i]!=secret[i]) break;"])
+body("The full authentication routine is listed in Appendix 19. The amplified first-round "
+     "routine computes the real intermediate d = counter XOR (const0 + key0), applies the random "
+     "mask when masking is enabled, and then, within a trigger-delimited window, toggles the "
+     "leak pins in proportion to the Hamming weight of each byte across four equal phases, as the "
+     "following two lines capture:")
+code(["uint32_t v = (counter ^ (kConstants[0] + chacha_key[0])) ^ mask;  // masked target",
+      "for (k=0;k<8;k++) if (b&(1<<k)) { pin_high(k); pin_low(k); }       // toggles ~ HW(b)"])
+body("The complete routine, including the four-phase loop and the constant-time dummy path, is "
+     "listed in Appendix 20. The Kyber routine is analogous: it computes the real pointwise "
+     "product t = s_hat * u mod q of the secret coefficient with the attacker-supplied value and "
+     "amplifies the Hamming weight of that twelve-bit product in the same manner, as shown below; "
+     "the full routine is in Appendix 21.")
+code(["uint16_t t = (kyber_s_hat * u) % KYBER_Q;     // secret-dependent product",
+      "for (bit=0;bit<12;bit++) if (t&(1<<bit)) { pin_high(bit&7); pin_low(bit&7); }"])
 
 sec_h("4.3  The Shared Cryptographic Engine")
 body("The shared engine implements the Hamming-weight model, the correlation computation, and "
@@ -1082,14 +1124,10 @@ body("The shared engine implements the Hamming-weight model, the correlation com
      "correlation between a matrix of leakage hypotheses and a matrix of measured traces is "
      "computed in a single vectorised operation, and the recovery of an exclusive-or target "
      "byte selects the candidate of largest signed correlation, as required to disambiguate a "
-     "key byte from its complement. The core of the exclusive-or recovery is shown below.")
-code(["def attack_byte_xor(known_bytes, traces):",
-      "    guesses = np.arange(256)",
-      "    xored = (known_bytes[:, None] ^ guesses[None, :]) & 0xFF",
-      "    hyp = hamming_weight_vec(xored)",
-      "    corr = correlation_matrix(hyp, traces)",
-      "    peak = corr.max(axis=1)        # signed peak resolves the complement",
-      "    return int(np.argmax(peak))"])
+     "key byte from its complement, as the two central lines show; the full per-byte analysis is "
+     "listed in Appendix 9.")
+code(["corr = correlation_matrix(hamming_weight_vec(known ^ guesses), traces)",
+      "best = int(np.argmax(corr.max(axis=1)))   # signed peak resolves the complement"])
 
 sec_h("4.4  The Attacker Program")
 body("The attacker program is a self-contained command-line tool that can only observe the "
@@ -1170,10 +1208,10 @@ body("On the physical ESP32-S3 the correlation power analysis attack recovered t
      "distribution of correlation across all candidates for one byte, and an example trace with "
      "its byte-phase boundaries. Table 5.1 contrasts the naive and amplified acquisitions.")
 figure(FIG / "cpa_report.png", "Figure 5.1  Correlation power analysis of the ChaCha20 first round")
+caption_above("Table 5.1  Hardware correlation power analysis results")
 table(["Configuration", "Peak correlation", "Traces to disclosure", "Key recovered"],
       [["Naive single-shot", "~0.05 (noise floor)", "not recoverable", "No"],
        ["Amplified leakage", "~0.33", "~400", "Yes (0xDEADBEEF)"]])
-caption("Table 5.1  Hardware correlation power analysis results")
 body("The discriminating power of the attack is illustrated by the correlation heatmap of "
      "Figure 5.5, computed from the real hardware traces, which plots the absolute correlation "
      "for every one of the two hundred and fifty-six candidate values of a representative key "
@@ -1201,12 +1239,12 @@ body("Two aspects of the hardware result deserve comment. The first is the margi
      "about four hundred traces, each collected in a fraction of a second, means the whole "
      "attack takes a few minutes, which conveys concretely how modest an effort an unprotected "
      "device demands of an adversary with physical access.")
+caption_above("Table 5.2  Full 256-bit ChaCha20 key recovery (simulation)")
 table(["Column driven by", "Key word (low)", "Key word (high)", "Recovered"],
       [["Counter", "key0 = 0xDEADBEEF", "key4 = 0x5A5A5A5A", "Yes"],
        ["Nonce word 0", "key1 = 0xCAFEBABE", "key5 = 0xF0F0F0F0", "Yes"],
        ["Nonce word 1", "key2 = 0x13371337", "key6 = 0x0F0F0F0F", "Yes"],
        ["Nonce word 2", "key3 = 0xA5A5A5A5", "key7 = 0xBAADF00D", "Yes"]])
-caption("Table 5.2  Full 256-bit ChaCha20 key recovery (simulation)")
 
 sec_h("5.2  Effectiveness of Masking")
 body("The masking countermeasure was evaluated by leakage assessment. With masking disabled "
@@ -1218,10 +1256,10 @@ body("The masking countermeasure was evaluated by leakage assessment. With maski
      "summarises the result for both ChaCha20 and Kyber. The suppression is reported both as a "
      "ratio of peak correlations and in decibels.")
 figure(FIG / "tvla.png", "Figure 5.2  TVLA leakage assessment on hardware, masking disabled and enabled (ChaCha20)")
+caption_above("Table 5.3  Masking leakage assessment for ChaCha20 and Kyber (software model)")
 table(["Target", "Statistic (off)", "Statistic (on)", "Verdict (off / on)", "Suppression"],
       [["ChaCha20", "7.7", "3.0", "leaks / pass", "3.8x (11.6 dB)"],
        ["Kyber", "25.1", "2.6", "leaks / pass", "6.0x (15.6 dB)"]])
-caption("Table 5.3  Masking leakage assessment for ChaCha20 and Kyber (software model)")
 body("The same assessment was repeated on the physical ESP32-S3 for ChaCha20. There the "
      "leakage statistic measured 4.5 with masking disabled, crossing the assessment threshold and "
      "confirming exploitable leakage, and fell to 2.5 with masking enabled, a clear pass; over the "
@@ -1269,13 +1307,13 @@ body("On the physical device the attack was driven over the serial command inter
      "command being accepted on resend, and was blocked entirely once nonce checking was "
      "enabled, while legitimate fresh commands continued to be accepted. These outcomes are "
      "summarised in Table 5.4.")
+caption_above("Table 5.4  Timing and replay attack outcomes")
 table(["Attack / configuration", "Outcome"],
       [["Timing, early-exit comparison (software model)", "3 of 4 secret bytes recovered"],
        ["Timing, constant-time comparison (software model)", "0 of 4 bytes recovered"],
        ["Timing, over serial link (hardware)", "Not recovered (signal below link-latency noise)"],
        ["Replay, no nonce (hardware)", "Replay accepted (device subverted)"],
        ["Replay, nonce enforced (hardware)", "Replay rejected; fresh command accepted"]])
-caption("Table 5.4  Timing and replay attack outcomes")
 
 sec_h("5.4  Post-Quantum Target")
 body("The correlation attack on the Kyber pointwise multiplication was carried out on the "
@@ -1319,6 +1357,16 @@ body("This result carries a particular significance in the present moment. The m
      "deploys Kyber without masking its secret-dependent arithmetic inherits the full force of "
      "the power-analysis threat.")
 figure(FIG / "kyber_cpa.png", "Figure 5.3  Kyber coefficient CPA on hardware: correct secret versus all guesses")
+body("Table 5.8 lists the five strongest candidate coefficients on hardware. The correct value, "
+     "1234, leads with a clear margin over its nearest rival, and the subsidiary candidates are "
+     "the small-multiple relatives of the true coefficient expected of a Hamming-weight model.")
+caption_above("Table 5.8  Kyber coefficient CPA: strongest candidates (hardware)")
+table(["Rank", "Candidate coefficient", "Peak |corr|"],
+      [["1", "1234 (correct)", "0.23"],
+       ["2", "617", "0.15"],
+       ["3", "2468", "0.15"],
+       ["4", "3042", "0.12"],
+       ["5", "1584", "0.12"]])
 
 sec_h("5.5  Probing Detection")
 body("The probing monitor was evaluated for both detection latency and false alarms. The "
@@ -1329,10 +1377,10 @@ body("The probing monitor was evaluated for both detection latency and false ala
      "normal traffic, confirming that it closes the gap left by fixed thresholds. The results "
      "are shown in Figure 5.4 and Table 5.5.")
 figure(FIG / "probing.png", "Figure 5.4  Probing-detection latency for rule-based and ML monitors")
+caption_above("Table 5.5  Probing-detection analytics")
 table(["Monitor", "False-positive rate", "Aggressive attacker", "Throttled attacker"],
       [["Rule-based", "0%", "detected in 10 requests", "not detected"],
        ["Machine learning", "0%", "detected in 10 requests", "detected in 10 requests"]])
-caption("Table 5.5  Probing-detection analytics")
 
 sec_h("5.6  Detailed Hardware Analysis")
 body("This section examines the hardware measurements in more depth, drawing on the raw traces "
@@ -1361,6 +1409,12 @@ body("Figure 5.8 reports, for each of the four bytes of the recovered word, the 
      "is an honest picture of where the per-byte evidence is strong and where it is marginal, "
      "and it is the kind of detail that a bare report of the recovered key would conceal.")
 figure(FIG / "hw_perbyte_corr.png", "Figure 5.8  Hardware CPA: correct candidate versus runner-up, per byte")
+caption_above("Table 5.9  Per-byte hardware CPA detail")
+table(["Byte", "Recovered value", "Correct |corr|", "Runner-up |corr|", "Margin"],
+      [["0", "0x54", "0.302", "0.279", "0.023"],
+       ["1", "0x37", "0.323", "0.291", "0.033"],
+       ["2", "0x1e", "0.374", "0.321", "0.053"],
+       ["3", "0x40", "0.268", "0.268", "0.000"]])
 body("Figure 5.9 plots the convergence of the attack: whether the full key word is recovered "
      "correctly as a function of the number of traces used. The attack first discloses the key "
      "at about one hundred and fifty traces, and from roughly two hundred and sixty traces "
@@ -1372,6 +1426,9 @@ body("Figure 5.9 plots the convergence of the attack: whether the full key word 
      "and on this device that count is a few hundred traces, each collected in a fraction of a "
      "second.")
 figure(FIG / "hw_ntd_curve.png", "Figure 5.9  Hardware CPA convergence (traces to disclosure)")
+caption_above("Table 5.10  Hardware CPA convergence with trace count")
+table(["Traces", "50", "65", "86", "114", "150", "198", "262", "345", "455", "600"],
+      [["Key recovered", "no", "no", "no", "no", "yes", "no", "yes", "yes", "yes", "yes"]])
 body("The contrast in the masking of the two targets, shown earlier in Figure 5.6, is the "
      "central finding worth restating here: on the same silicon, through the same measurement "
      "path, the masking that drives the ChaCha20 statistic below the threshold leaves the Kyber "
@@ -1400,6 +1457,7 @@ body("Finally, Figure 5.11 and Table 5.7 place the simulation and the hardware s
      "silicon is itself a result worth reporting, because it calibrates how much the idealised "
      "model flatters the attacker relative to a real low-budget adversary.")
 figure(FIG / "sim_vs_hw.png", "Figure 5.11  Simulation versus hardware for the ChaCha20 power attack")
+caption_above("Table 5.7  Simulation versus hardware, consolidated")
 table(["Metric", "Simulation", "Hardware"],
       [["Key word recovered", "0xDEADBEEF", "0xDEADBEEF"],
        ["Mean peak correlation", "~0.49", "~0.32"],
@@ -1409,7 +1467,6 @@ table(["Metric", "Simulation", "Hardware"],
        ["Kyber masking", "suppresses leakage", "ineffective (finding)"],
        ["Timing attack", "3 of 4 bytes", "not resolved over serial link"],
        ["Replay without nonce / with nonce", "accepted / blocked", "accepted / blocked"]])
-caption("Table 5.7  Simulation versus hardware, consolidated")
 
 sec_h("5.7  Discussion")
 body("Taken together, the results establish an end-to-end account of physical key recovery and "
@@ -1471,6 +1528,7 @@ body("Table 5.6 consolidates the principal outcomes. For every attack the device
      "vulnerable when unprotected and protected when the corresponding countermeasure is "
      "enabled, and for the power attacks the protection is confirmed independently by leakage "
      "assessment.")
+caption_above("Table 5.6  Consolidated summary of results")
 table(["Attack", "Unprotected", "Protected", "Evidence"],
       [["ChaCha20 power CPA (hardware)", "key recovered (~300 traces)", "fails (noise floor)", "TVLA 4.5 -> 2.5 (hw)"],
        ["Full ChaCha20 (software model)", "256-bit key recovered", "fails under masking", "per-byte correlation"],
@@ -1479,7 +1537,6 @@ table(["Attack", "Unprotected", "Protected", "Evidence"],
        ["Replay (hardware)", "replay accepted", "replay rejected", "accept/reject log"],
        ["Kyber coefficient CPA (hardware)", "coefficient recovered", "masking ineffective on hw; fails in model", "hw TVLA 6.8 -> 6.5; corr 0.20"],
        ["Probing (any)", "trace collection proceeds", "detected in 10 requests", "0% false positives"]])
-caption("Table 5.6  Consolidated summary of results")
 
 print("chapter 5 done")
 
@@ -1534,26 +1591,28 @@ body("Beyond the individual results, the work makes a case for accessibility tha
      "separation of attacker from defender is, taken as a whole, the contribution the project is "
      "most confident will outlast any single measurement in it.")
 sec_h("6.2  Future Work")
-bullet("Acquisition with a high-bandwidth oscilloscope to perform single-shot rather than "
-       "amplified power analysis, strengthening the external validity of the hardware results.")
-bullet("Direct device-side measurement of the authentication response latency, with a logic "
-       "analyser or an input/output-pin timer rather than the serial command link, to realise "
-       "the timing attack on hardware without the link latency that masks the signal in the "
-       "present apparatus.")
-bullet("Full physical recovery of all key words on hardware, using chosen-nonce collection "
-       "across every column of the first round.")
-bullet("Correction of the Kyber masking in firmware, which was found ineffective on hardware "
-       "against the amplified-leakage attack: re-randomising the mask within the measured window "
-       "or adopting an arithmetic share for the modular product, verified by a second-order "
-       "leakage assessment.")
-bullet("A complete on-device implementation of the CRYSTALS-Kyber key-encapsulation mechanism "
-       "and a second-order attack against its masked implementation.")
-bullet("Evaluation of the electromagnetic side channel as a non-contact alternative to the "
-       "power channel, and of fault injection as an active attack.")
-bullet("Profiled template attacks that exploit a cloned device to recover the key from very "
-       "few traces of the target.")
-bullet("Extension of the framework to a production-representative industrial controller and its "
-       "real communication protocols.")
+body("Several extensions would deepen and broaden the present work. The most immediate concerns "
+     "the measurement instrument: acquiring traces with a high-bandwidth oscilloscope would "
+     "permit single-shot rather than amplified power analysis and so strengthen the external "
+     "validity of the hardware results, and a direct, device-side measurement of the "
+     "authentication response latency - taken with a logic analyser or an input/output-pin timer "
+     "rather than across the serial command link - would realise the timing attack on hardware "
+     "without the link latency that masks the signal in the present apparatus. Closer to the "
+     "cryptography, the full physical recovery of all eight key words on hardware, using "
+     "chosen-nonce collection across every column of the first round, would carry the single-word "
+     "result through to a complete key, and the Kyber masking that was found ineffective on the "
+     "device invites a firmware correction - re-randomising the mask within the measured window, "
+     "or adopting an arithmetic rather than a Boolean share for the modular product - verified by "
+     "a second-order leakage assessment.")
+body("Beyond these, a complete on-device implementation of the CRYSTALS-Kyber key-encapsulation "
+     "mechanism, together with a second-order attack against its masked implementation, would "
+     "extend the post-quantum evaluation from a single leaking operation to the whole scheme. The "
+     "framework could also be widened to new channels and adversaries: the electromagnetic side "
+     "channel as a non-contact alternative to the power channel, fault injection as an active "
+     "attack, and profiled template attacks that exploit a cloned device to recover the key from "
+     "very few traces of the target. Finally, extending the testbed to a production-representative "
+     "industrial controller and its real communication protocols would move the methodology from "
+     "a representative device towards a deployed cyber-physical system.")
 
 # ======================= REFERENCES =======================
 doc.add_page_break()
@@ -1605,9 +1664,11 @@ refs = [
  "Texas Instruments. (2018). ADS1115 ultra-small, low-power, 16-bit analog-to-digital "
  "converter datasheet. Texas Instruments.",
 ]
-for i, r in enumerate(refs, 1):
-    p = para(space_after=8)
-    run(p, f"[{i}]  {r}", 12)
+for r in sorted(refs):                      # APA: alphabetical by author surname
+    p = para(space_after=8, align=JUST)
+    run(p, r, 12)
+    p.paragraph_format.left_indent = Inches(0.5)     # hanging indent
+    p.paragraph_format.first_line_indent = Inches(-0.5)
 
 # ======================= APPENDICES =======================
 doc.add_page_break()
@@ -1903,6 +1964,55 @@ body("In every case the figures and tables of Chapter 5 are regenerated from the
      "measurements rather than on a single unrepeatable run. This closes the loop between the "
      "claims made and the evidence retained, and it is the practice the project recommends for "
      "any empirical security evaluation.")
+
+sec_h("Appendix 19  Authentication Check (Firmware)")
+code(["void handleCheck(const String &args) {",
+      "    // ... parse candidate bytes ...",
+      "    bool accepted;",
+      "    if (constant_time_enabled) {",
+      "        uint8_t diff = (len != SECRET_LEN) ? 1 : 0;",
+      "        for (size_t i = 0; i < SECRET_LEN; i++)",
+      "            diff |= candidate[i] ^ auth_secret[i];   // always full length",
+      "        accepted = (diff == 0);",
+      "    } else {",
+      "        accepted = (len == SECRET_LEN);",
+      "        for (size_t i = 0; i < len; i++)",
+      "            if (candidate[i] != auth_secret[i]) { accepted = false; break; }",
+      "    }",
+      "    Serial1.println(accepted ? \"OK\" : \"FAIL\");",
+      "}"])
+
+sec_h("Appendix 20  Amplified First-Round Leakage (Firmware)")
+code(["void handleLeakLoop(const String &args) {",
+      "    uint32_t counter = hexToU32(args.c_str());",
+      "    uint32_t a = (kConstants[0] + chacha_key[0]);     // const0 + key0",
+      "    uint32_t d = counter ^ a;                          // first-round XOR target",
+      "    uint32_t mask = masking_enabled ? esp_random() : 0;",
+      "    uint32_t v = d ^ mask;                             // masked when enabled",
+      "    digitalWrite(TRIGGER, HIGH);",
+      "    for (int j = 0; j < 4; j++) {                      // one phase per byte",
+      "        uint8_t b = (v >> (8*j)) & 0xFF;",
+      "        for (uint32_t it = 0; it < ITER; it++)",
+      "            for (int k = 0; k < 8; k++)",
+      "                if (b & (1<<k)) { pin_high(k); pin_low(k); }  // toggles ~ HW(b)",
+      "                else            { dummy_low();  dummy_low();  } // constant time",
+      "    }",
+      "    digitalWrite(TRIGGER, LOW);",
+      "    Serial1.println(\"LEAKDONE\");",
+      "}"])
+
+sec_h("Appendix 21  Kyber Coefficient Leakage (Firmware)")
+code(["void handleKyberLeak(const String &args) {",
+      "    uint32_t u = hexToU32(args.c_str()) % KYBER_Q;",
+      "    uint16_t t = (kyber_s_hat * u) % KYBER_Q;          // secret-dependent product",
+      "    digitalWrite(TRIGGER, HIGH);",
+      "    for (uint32_t it = 0; it < ITER; it++)",
+      "        for (int bit = 0; bit < 12; bit++)             // 12-bit coefficient",
+      "            if (t & (1<<bit)) { pin_high(bit & 7); pin_low(bit & 7); }",
+      "            else              { dummy_low(); dummy_low(); }",
+      "    digitalWrite(TRIGGER, LOW);",
+      "    Serial1.println(\"KYBERDONE\");",
+      "}"])
 
 doc.save(str(OUT))
 print("FULL REPORT saved", OUT)

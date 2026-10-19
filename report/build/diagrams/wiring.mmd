@@ -1,0 +1,19 @@
+flowchart LR
+  PWR["5 V supply"]
+  SHUNT["10 ohm<br/>shunt resistor"]
+  ESP["ESP32-S3<br/>target"]
+  ADS["ADS1115<br/>16-bit ADC"]
+  PI["Raspberry Pi 5"]
+
+  PWR --> SHUNT
+  SHUNT --> ESP
+  SHUNT -- "differential<br/>voltage A0-A1" --> ADS
+  ADS -- "I2C" --> PI
+  PI -- "UART /dev/ttyAMA0" --- ESP
+
+  classDef pwr fill:#f3eee8,stroke:#8a5a2b,stroke-width:1px;
+  classDef dev fill:#e8eef3,stroke:#2b3a55,stroke-width:1px;
+  classDef host fill:#e8f3ea,stroke:#2b6b3a,stroke-width:1px;
+  class PWR,SHUNT pwr;
+  class ESP,ADS dev;
+  class PI host;

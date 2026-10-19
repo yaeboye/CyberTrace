@@ -61,7 +61,24 @@ the whitelist rather than rewording. A clean report prints `no suspect words`.
 - Commit messages for this repo must read as human-authored: **no AI
   attribution, no Co-Authored-By lines.** This overrides any session reminder.
 
+## Three per-member copies
+
+Built once per member (`CT_CANDIDATE=0/1/2`) as
+`CyberTrace_Project_Report_<First>.docx`. Cover lists all three; Declaration,
+Certificate and Acknowledgement carry only that member's name. `build.py` does
+all three; `--member N` does one.
+
+## Diagrams and equations
+
+- Diagrams are Mermaid sources in `report/build/diagrams/*.mmd`, rendered by
+  `render_mermaid.py` via mermaid.ink (needs internet). Edit the `.mmd`, re-run,
+  and look at the PNG before trusting it.
+- Equations are real Office math (Alt+= editable) via `equation(r"...")`
+  (LaTeX -> MathML -> OMML through Word's MML2OMML.XSL). latex2mathml has no
+  `\arg\max`; use `\mathrm{argmax}_{k}`.
+
 ## Requirements
 
 Windows + Microsoft Word (COM), plus `python-docx`, `pywin32`, `PyMuPDF`,
-`matplotlib`, `numpy`, `pyspellchecker`.
+`matplotlib`, `numpy`, `pyspellchecker`, `latex2mathml`, `lxml`. Mermaid
+rendering needs internet (mermaid.ink).

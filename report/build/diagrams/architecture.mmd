@@ -1,0 +1,29 @@
+flowchart LR
+  subgraph HOST["Raspberry Pi 5 (host)"]
+    direction TB
+    ATK["Attacker program<br/>key recovery only"]
+    DEF["Defender program<br/>device owner console"]
+  end
+
+  subgraph TGT["Target ESP32-S3"]
+    direction TB
+    CRYPTO["ChaCha20 / Kyber<br/>cryptographic core"]
+    CM["Countermeasures<br/>masking, constant-time,<br/>nonce, key refresh"]
+    MON["Probing monitor<br/>rule + ML"]
+  end
+
+  MEAS["10 ohm shunt<br/>+ ADS1115 ADC"]
+
+  ATK -- "legitimate interface<br/>(UART commands)" --> CRYPTO
+  ATK -. "power measurement" .-> MEAS
+  MEAS --> CRYPTO
+  DEF -- "countermeasure &<br/>key control" --> CM
+  CM --- CRYPTO
+  MON --- CRYPTO
+
+  classDef host fill:#e8eef3,stroke:#2b3a55,stroke-width:1px;
+  classDef tgt fill:#f3eee8,stroke:#8a5a2b,stroke-width:1px;
+  classDef meas fill:#e8f3ea,stroke:#2b6b3a,stroke-width:1px;
+  class ATK,DEF host;
+  class CRYPTO,CM,MON tgt;
+  class MEAS meas;

@@ -21,7 +21,7 @@ import sys
 import tempfile
 
 REPO = pathlib.Path(r"C:\Users\satvi\CyberTrace")
-DOCX = REPO / "report" / "CyberTrace_Project_Report.docx"
+DOCX = REPO / "report" / "CyberTrace_Project_Report_Satvik.docx"
 GEN = REPO / "report" / "build" / "gen_report.py"
 
 PLACEHOLDERS = ["[GUIDE NAME]", "[Designation]", "[TEAMMATE NAME]", "[Teammate Name]",
@@ -118,7 +118,7 @@ def _parse_source(gen):
 def check_fig_table_consistency(gen):
     src = gen.read_text(encoding="utf-8")
     fig_used = {n for n, _ in re.findall(r'figure\(FIG / "[^"]+",\s*"(Figure [\d.]+)\s+([^"]+)"', src)}
-    tab_used = {n for n, _ in re.findall(r'caption\("(Table [\d.]+)\s+([^"]+)"', src)}
+    tab_used = {n for n, _ in re.findall(r'caption(?:_above)?\("(Table [\d.]+)\s+([^"]+)"', src)}
     # List-of blocks: capture entries inside the two for-loops
     lof_block = re.search(r'LIST OF FIGURES.*?for f in \[(.*?)\]:', src, re.S)
     lot_block = re.search(r'LIST OF TABLES.*?for t in \[(.*?)\]:', src, re.S)

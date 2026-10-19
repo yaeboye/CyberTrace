@@ -1,0 +1,22 @@
+flowchart LR
+  C0["const0<br/>(fixed)"]
+  K0["key0<br/>(secret)"]
+  CTR["counter<br/>(known input)"]
+  ADD["a = const0 + key0<br/>(mod 2^32)"]
+  XOR["d = counter XOR a"]
+  TGT["CPA target<br/>Hamming weight of d"]
+
+  C0 --> ADD
+  K0 --> ADD
+  ADD --> XOR
+  CTR --> XOR
+  XOR --> TGT
+
+  classDef known fill:#e8eef3,stroke:#2b3a55,stroke-width:1px;
+  classDef secret fill:#f3e8e8,stroke:#8a2b2b,stroke-width:1px;
+  classDef op fill:#eef0f2,stroke:#555,stroke-width:1px;
+  classDef tgt fill:#f3eee8,stroke:#8a5a2b,stroke-width:1.5px;
+  class C0,CTR known;
+  class K0 secret;
+  class ADD,XOR op;
+  class TGT tgt;
