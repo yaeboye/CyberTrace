@@ -38,3 +38,6 @@ esp32/.vscode/
 # report generator lives under report/build/ and must be tracked
 !report/build/
 !report/build/**
+
+# Word lock/owner files
+~$*
