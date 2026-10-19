@@ -1,0 +1,4 @@
+_preview/
+_preview.pdf
+*.pyc
+__pycache__/
