@@ -211,6 +211,24 @@ class MLProbingDetector(ProbingDetector):
         )
         self.is_trained = True
 
+    def save(self, path):
+        """Persist the fitted scaler, forest, and calibrated threshold so the
+        detector can be reloaded without retraining (used to ship a model
+        trained on real captured traffic)."""
+        import joblib
+        import pathlib
+        pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump({
+            "model": self.model,
+            "scaler": self.scaler,
+            "score_threshold": self.score_threshold,
+            "margin_sigmas": self.margin_sigmas,
+            "window_seconds": self.window_seconds,
+            "min_samples": self.min_samples,
+            "feature_names": FEATURE_NAMES,
+        }, path)
+        return path
+
     def anomaly_score(self):
         """Signed anomaly score for the current window. Lower = more anomalous.
         None if not enough samples or not trained."""
@@ -266,6 +284,24 @@ def build_trained_ml_detector(window_seconds=60, n_windows=200, events_per_windo
             features.append(f)
     detector.train(features)
     return detector
+
+
+def load_ml_detector(path, window_seconds=None, min_samples=None):
+    """Load a detector previously saved with MLProbingDetector.save(). Returns a
+    ready-to-use detector whose model was fitted on real captured traffic."""
+    import joblib
+    d = joblib.load(path)
+    det = MLProbingDetector(
+        window_seconds=window_seconds if window_seconds is not None else d.get("window_seconds", 10.0),
+        min_samples=min_samples if min_samples is not None else d.get("min_samples", 10),
+        margin_sigmas=d.get("margin_sigmas", 3.5))
+    if not det.has_sklearn:
+        raise RuntimeError("scikit-learn not available; cannot load ML detector")
+    det.model = d["model"]
+    det.scaler = d["scaler"]
+    det.score_threshold = d["score_threshold"]
+    det.is_trained = True
+    return det
 
 
 def simulate_normal_traffic(detector, rng, n_events=40, base_time=0.0):

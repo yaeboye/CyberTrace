@@ -137,5 +137,53 @@ def evaluate(n_seeds=200, verbose=True):
     return metrics
 
 
+def evaluate_dataset(npz_path, model_path, verbose=True):
+    """Evaluate a persisted detector on the REAL captured-traffic test split.
+    Reports ROC-AUC, FPR and per-attack-class TPR at the model's own threshold.
+    """
+    import numpy as np
+    from sklearn.metrics import roc_auc_score
+    sys.path.insert(0, str(pathlib.Path(REPO := pathlib.Path(__file__).resolve().parents[1]) / "rpi" / "defense" / "probing"))
+    from probing_detector import load_ml_detector
+
+    det = load_ml_detector(model_path)
+    data = np.load(npz_path, allow_pickle=True)
+    X, label_name, split = data["X"], data["label_name"], data["split"]
+    test = split == "test"
+    sc = det.model.score_samples(det.scaler.transform(X[test]))
+    names = label_name[test]
+    thr = det.score_threshold
+
+    normal = sc[names == "normal"]
+    metrics = {"threshold": float(thr), "fpr": float(np.mean(normal < thr)),
+               "n_normal_test": int((names == "normal").sum())}
+    if verbose:
+        print("=== probing detector on REAL captured test traffic ===")
+        print(f"operating point: score < {thr:.3f}")
+        print(f"normal FPR                 {metrics['fpr']*100:5.1f} %  (n={metrics['n_normal_test']})")
+    for cls in sorted(set(names) - {"normal"}):
+        a = sc[names == cls]
+        if len(a) == 0:
+            continue
+        y = np.r_[np.zeros(len(normal)), np.ones(len(a))]
+        auc = float(roc_auc_score(y, np.r_[-normal, -a]))
+        tpr = float(np.mean(a < thr))
+        metrics[f"auc_{cls}"] = auc
+        metrics[f"tpr_{cls}"] = tpr
+        if verbose:
+            print(f"{cls:11s} ROC-AUC {auc:.3f}   TPR {tpr*100:5.1f} %  (n={len(a)})")
+    return metrics
+
+
 if __name__ == "__main__":
-    evaluate()
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dataset", help="evaluate a persisted model on this windows.npz "
+                                      "(real test split) instead of synthetic traffic")
+    ap.add_argument("--model", default=str(pathlib.Path(__file__).resolve().parents[1]
+                                           / "models" / "probing_iforest.joblib"))
+    a = ap.parse_args()
+    if a.dataset:
+        evaluate_dataset(a.dataset, a.model)
+    else:
+        evaluate()
