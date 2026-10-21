@@ -39,7 +39,7 @@ def _git_commit():
         return "unknown"
 
 
-def train(dataset=DS, margin_sigmas=3.5):
+def train(dataset=DS, margin_sigmas=2.0):
     data = np.load(dataset, allow_pickle=True)
     X, label_name, split = data["X"], data["label_name"], data["split"]
 
@@ -52,15 +52,11 @@ def train(dataset=DS, margin_sigmas=3.5):
     if not det.has_sklearn:
         raise SystemExit("scikit-learn not installed")
     det.train(list(X[train_mask]))
-
-    # Recalibrate the threshold as the empirical target_fpr quantile of the
-    # real normal-training scores. This targets ~1% false positives directly
-    # and is robust to the skew that makes the mean-k*sigma rule sit below the
-    # attack cluster on real data. The sigma-based value is kept for reference.
-    sigma_threshold = det.score_threshold
-    train_scores = det.model.score_samples(det.scaler.transform(X[train_mask]))
-    target_fpr = 0.01
-    det.score_threshold = float(np.quantile(train_scores, target_fpr))
+    # det.train sets score_threshold = mean - margin_sigmas * std of the real
+    # normal-training scores. A distributional estimator is used rather than an
+    # empirical quantile because the real normal set is small, which makes a raw
+    # low-percentile cutoff land on a single bursty outlier. margin_sigmas is
+    # tunable from the CLI if a tighter or looser operating point is wanted.
     det.save(MODEL)
 
     classes, counts = np.unique(label_name, return_counts=True)
@@ -72,17 +68,16 @@ def train(dataset=DS, margin_sigmas=3.5):
         "algorithm": "IsolationForest(n_estimators=200, contamination='auto', random_state=42) + StandardScaler",
         "training": "one-class: fitted on real NORMAL traffic, train split only",
         "n_train_normal_windows": n_train,
-        "threshold_rule": "empirical 1% quantile of real normal-train scores (~1% FPR)",
+        "threshold_rule": "mean - margin_sigmas * std of real normal-train scores",
         "score_threshold": det.score_threshold,
         "margin_sigmas": margin_sigmas,
-        "sigma_threshold_reference": sigma_threshold,
         "class_window_counts": {str(c): int(n) for c, n in zip(classes, counts)},
     }
     META.parent.mkdir(parents=True, exist_ok=True)
     META.write_text(json.dumps(meta, indent=2))
 
     print(f"trained on {n_train} real normal windows")
-    print(f"  threshold {det.score_threshold:.4f}  (mean - {margin_sigmas}sigma, ~1% FPR)")
+    print(f"  threshold {det.score_threshold:.4f}  (mean - {margin_sigmas}*sigma of normal-train scores)")
     print(f"  -> {MODEL}")
     print(f"  -> {META}")
     return MODEL
@@ -91,7 +86,7 @@ def train(dataset=DS, margin_sigmas=3.5):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", default=str(DS))
-    ap.add_argument("--margin-sigmas", type=float, default=3.5)
+    ap.add_argument("--margin-sigmas", type=float, default=2.0)
     args = ap.parse_args()
     train(pathlib.Path(args.dataset), args.margin_sigmas)
 
