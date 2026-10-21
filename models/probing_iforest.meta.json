@@ -1,0 +1,27 @@
+{
+  "trained_utc": "2026-10-21T06:09:34+00:00",
+  "git_commit": "f2ef015",
+  "dataset": "data/ml_dataset/windows.npz",
+  "feature_names": [
+    "entropy",
+    "rate",
+    "timing_cv",
+    "duplicate_ratio",
+    "sequentialness",
+    "compression_ratio",
+    "autocorr",
+    "burst_ratio",
+    "accel"
+  ],
+  "algorithm": "IsolationForest(n_estimators=200, contamination='auto', random_state=42) + StandardScaler",
+  "training": "one-class: fitted on real NORMAL traffic, train split only",
+  "n_train_normal_windows": 50,
+  "threshold_rule": "mean - margin_sigmas * std of real normal-train scores",
+  "score_threshold": -0.595828461541442,
+  "margin_sigmas": 2.0,
+  "class_window_counts": {
+    "aggressive": 194,
+    "normal": 74,
+    "throttled": 128
+  }
+}

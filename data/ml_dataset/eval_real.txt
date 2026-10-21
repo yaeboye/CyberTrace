@@ -1,0 +1,5 @@
+=== probing detector on REAL captured test traffic ===
+operating point: score < -0.654
+normal FPR                   0.0 %  (n=24)
+aggressive  ROC-AUC 1.000   TPR   0.0 %  (n=60)
+throttled   ROC-AUC 1.000   TPR   0.0 %  (n=40)
