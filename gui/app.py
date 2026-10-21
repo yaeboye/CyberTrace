@@ -121,6 +121,13 @@ class CyberTraceApp:
         ttk.Checkbutton(dut, text="Key refresh  (auto-rotate on detection)",
                         variable=self.keyref).pack(anchor="w", padx=10, pady=(2, 8))
 
+        # run mode: simulator (offline, no hardware) or the real ESP32 testbed
+        self.hw = tk.BooleanVar(value=False)
+        mode = ttk.LabelFrame(left, text="Run mode", style="Panel.TLabelframe")
+        mode.pack(fill="x", pady=(0, 12))
+        ttk.Checkbutton(mode, text="Real hardware  (ESP32 on /dev/ttyAMA0; off = simulator)",
+                        variable=self.hw).pack(anchor="w", padx=10, pady=8)
+
         # attacker
         atk = ttk.LabelFrame(left, text="Attacker  (key recovery only)",
                              style="Panel.TLabelframe")
@@ -229,6 +236,7 @@ class CyberTraceApp:
 
     def _flags(self):
         f = []
+        if self.hw.get(): f.append("--hw")
         if self.masked.get(): f.append("--masked")
         if self.ctime.get(): f.append("--constant-time")
         if self.nonce.get(): f.append("--nonce")
@@ -260,13 +268,13 @@ class CyberTraceApp:
         self._run("Replay", ["ct_attack.py", "replay", *self._flags()], ROOT / "attacker")
 
     def run_refresh(self):
-        self._run("Key refresh", ["ct_defend.py", "refresh"], ROOT / "defender")
+        cmd = ["ct_defend.py", "refresh"] + (["--hw"] if self.hw.get() else [])
+        self._run("Key refresh", cmd, ROOT / "defender")
 
     def run_assess(self, target):
-        self._run(f"Assess {target}",
-                  ["ct_defend.py", "assess", "--target", target,
-                   "--traces", str(self.traces.get())],
-                  ROOT / "defender", fig="tvla.png")
+        cmd = ["ct_defend.py", "assess", "--target", target,
+               "--traces", str(self.traces.get())] + (["--hw"] if self.hw.get() else [])
+        self._run(f"Assess {target}", cmd, ROOT / "defender", fig="tvla.png")
 
     def run_monitor(self):
         self._run("Monitor", ["ct_defend.py", "monitor"], ROOT / "defender")
