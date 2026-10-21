@@ -129,3 +129,4 @@ multi
 const
 const0
 key0
+defence
