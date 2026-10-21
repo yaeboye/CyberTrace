@@ -19,9 +19,14 @@ from kyber_model import KYBER_Q, pointwise, hw, hw_vec  # noqa: E402
 from cpa_engine import correlation_matrix  # noqa: E402
 
 
-def recover_coefficient(u_values, traces):
+def recover_coefficient(u_values, traces, align=True):
     """u_values: (n,) known u_hat_i per trace. traces: (n, samples).
-    Returns (best_s_hat, peak_corr, margin, ranking)."""
+    Returns (best_s_hat, peak_corr, margin, ranking). Traces are realigned by
+    default to remove the hardware leak-loop start jitter (see cpa.align_traces);
+    harmless no-op on aligned simulation traces."""
+    if align:
+        from cpa import align_traces
+        traces = align_traces(np.asarray(traces, dtype=np.float64))
     guesses = np.arange(KYBER_Q, dtype=np.int64)
     # hypothesis[n, g] = HW((guess_g * u_n) mod q)
     prod = (u_values[:, None].astype(np.int64) * guesses[None, :]) % KYBER_Q

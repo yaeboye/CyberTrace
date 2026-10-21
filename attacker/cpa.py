@@ -33,6 +33,39 @@ def collect(transport, n_traces, counters=None, rng=None, progress=None):
     return counters, np.array([r[:length] for r in rows])
 
 
+def align_traces(traces, max_shift=25):
+    """Align traces to a common reference to remove the few-sample jitter in
+    where the leak loop starts.
+
+    On real hardware the interval between issuing the command and the device
+    entering the measured loop varies by a handful of samples (serial and OS
+    scheduling latency), so the four byte-phase windows land at slightly
+    different sample indices on every trace. Correlating at a fixed sample then
+    averages the leakage away. Each trace is shifted (within +/-max_shift) to
+    best match the mean trace, which realigns the phases; on already-aligned
+    simulation traces the best shift is zero, so this is a safe no-op there.
+    Returns traces trimmed by max_shift on each side.
+    """
+    T = np.asarray(traces, dtype=np.float64)
+    n, L = T.shape
+    if L <= 2 * max_shift + 4:
+        return T
+    ref = T.mean(axis=0)
+    refc = ref[max_shift:L - max_shift]
+    refc = refc - refc.mean()
+    refc_norm = np.dot(refc, refc) or 1e-9
+    out = np.empty((n, L - 2 * max_shift), dtype=np.float64)
+    for i in range(n):
+        x = T[i] - T[i].mean()
+        best_v, best_sh = -np.inf, 0
+        for sh in range(-max_shift, max_shift + 1):
+            v = np.dot(x[max_shift + sh:L - max_shift + sh], refc)
+            if v > best_v:
+                best_v, best_sh = v, sh
+        out[i] = T[i][max_shift + best_sh:L - max_shift + best_sh]
+    return out
+
+
 def _byte_corr(known_bytes, traces):
     """(256, n_samples) signed correlation for an XOR target byte."""
     guesses = np.arange(256, dtype=np.uint32)
@@ -94,8 +127,15 @@ def _ntd_curve(counters, traces, per, steps=None):
     return curve, ntd, full_a
 
 
-def analyze(counters, traces):
-    """Full CPA analysis. Returns a structured report dict."""
+def analyze(counters, traces, align=True):
+    """Full CPA analysis. Returns a structured report dict.
+
+    Traces are realigned (see align_traces) before correlation by default, which
+    removes the hardware leak-loop start jitter; pass align=False to analyse the
+    raw traces as captured.
+    """
+    if align:
+        traces = align_traces(traces)
     per = traces.shape[1] // 4
     per_byte = [traces[:, b * per:(b + 1) * per] for b in range(4)]
     a, bytes_info = _recover_a(counters, per_byte)
