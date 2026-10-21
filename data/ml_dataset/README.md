@@ -34,7 +34,25 @@ windows.npz                   same, as arrays (X, y, label_name, split, source, 
 specific class. `split` is a deterministic per-log train/test split (last 30 %
 of each log's windows is test).
 
-## Pipeline
+## Run it yourself, offline on the Pi
+
+With the ESP32-S3 attached (default `/dev/ttyAMA0`), one command does
+everything -- capture, build, train, evaluate -- with no network:
+
+```
+bash run_ml_pipeline.sh            # full capture (recommended)
+bash run_ml_pipeline.sh --quick    # faster, smaller capture
+bash run_ml_pipeline.sh --check    # verify deps + device only
+```
+
+One-time dependencies (already installed on the testbed Pi):
+
+```
+pip install --break-system-packages numpy pyserial scikit-learn joblib \
+    adafruit-circuitpython-ads1x15 adafruit-blinka
+```
+
+## Pipeline (the steps run_ml_pipeline.sh performs)
 
 ```
 # 1. capture real traffic on the Pi (device attached), several sessions per class
