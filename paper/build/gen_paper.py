@@ -839,19 +839,37 @@ for r in [
 ]:
     ref(r)
 
-for bio in [
-    "SATVIK JINDAL is pursuing the B.Tech degree in computer science and "
-    "engineering at the Vellore Institute of Technology, Vellore, India. His "
-    "interests include hardware security, side-channel analysis, and embedded "
-    "systems.",
-    "SUSHRUT KOUNDINYA is pursuing the B.Tech degree in computer science and "
-    "engineering at the Vellore Institute of Technology, Vellore, India. His "
-    "interests include applied cryptography and post-quantum cryptography.",
-    "LAKSHAY TOMAR is pursuing the B.Tech degree in computer science and "
-    "engineering at the Vellore Institute of Technology, Vellore, India. His "
-    "interests include machine learning for security and anomaly detection.",
-]:
-    doc.add_paragraph(bio, style="AU_Bios")
+ASSETS = HERE.parent / "assets"
+BIOS = [
+    ("satvik.png",
+     "SATVIK JINDAL is pursuing the B.Tech degree in computer science and "
+     "engineering at the Vellore Institute of Technology, Vellore, India. His "
+     "interests include hardware security, side-channel analysis, and embedded "
+     "systems."),
+    ("sushrut.png",
+     "SUSHRUT KOUNDINYA is pursuing the B.Tech degree in computer science and "
+     "engineering at the Vellore Institute of Technology, Vellore, India. His "
+     "interests include applied cryptography and post-quantum cryptography."),
+    ("lakshay.png",
+     "LAKSHAY TOMAR is pursuing the B.Tech degree in computer science and "
+     "engineering at the Vellore Institute of Technology, Vellore, India. His "
+     "interests include machine learning for security and anomaly detection."),
+]
+for photo, bio in BIOS:
+    t = doc.add_table(rows=1, cols=2)
+    t.autofit = False
+    t.columns[0].width = Inches(1.0)
+    t.columns[1].width = Inches(2.4)
+    left, right = t.rows[0].cells
+    left.width = Inches(1.0); right.width = Inches(2.4)
+    p = left.paragraphs[0]
+    img = ASSETS / photo
+    if img.exists():
+        p.add_run().add_picture(str(img), width=Inches(0.9))
+    rp = right.paragraphs[0]
+    rp.style = doc.styles["AU_Bios"]
+    rp.paragraph_format.left_indent = Inches(0)
+    rp.add_run(bio)
 
 doc.save(str(OUT))
 print("saved", OUT)
