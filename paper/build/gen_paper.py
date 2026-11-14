@@ -334,14 +334,16 @@ heading("RELATED WORK")
 para("Kocher introduced timing attacks [1] and, with Jaffe and Jun, differential "
      "power analysis [2], establishing that physical measurements leak key "
      "material. Brier, Clavier and Olivier [3] refined differential analysis into "
-     "the correlation attack used throughout this paper, and Chari, Rao and "
-     "Rohatgi [4] developed template attacks and the theory of masking as a "
-     "countermeasure. Mangard, Oswald and Popp [12] give the standard textbook "
-     "treatment of both attacks and defenses, and Goodwill et al. [13] defined the "
+     "the correlation attack used throughout this paper. The difficulty of "
+     "actually protecting a commodity device with masking, and the limits of "
+     "evaluating that protection, are dissected by Bronchain and Standaert [4], "
+     "while Picek et al. [12] give a recent systematization of deep-learning-based "
+     "side-channel analysis. Goodwill et al. [13] defined the "
      "leakage-assessment methodology now used across the field. For lattice "
      "cryptography, Primas, Pessl and Mangard [9] showed that the number-theoretic "
      "transform in a masked lattice scheme is vulnerable to a single-trace attack, "
-     "Pessl and Primas [10] made the attack more practical, and Ravi et al. [11] "
+     "and more recently Dubrova et al. [10] recover keys from masked Kyber "
+     "implementations up to fifth order using deep learning; Ravi et al. [11] "
      "survey the rapidly growing body of side-channel and fault attacks against "
      "the standardised post-quantum schemes. More recent work has broadened the "
      "threat: Ravi et al. [15] mount generic chosen-ciphertext electromagnetic "
@@ -361,7 +363,7 @@ table("TABLE 1. Positioning against representative prior work.",
       [["Kocher et al. [2]", "DES", "Smartcard", "No", "No"],
        ["Brier et al. [3]", "DES / AES", "Smartcard", "No", "No"],
        ["Primas et al. [9]", "Kyber NTT", "Cortex-M", "Yes", "No"],
-       ["Pessl & Primas [10]", "NTT", "Cortex-M", "Yes", "No"],
+       ["Dubrova et al. [10]", "Masked Kyber", "Cortex-M", "Yes", "No"],
        ["Ravi et al. [11]", "PQC survey", "Various", "Yes", "No"],
        ["This work", "ChaCha20 + Kyber", "ESP32-S3", "Yes", "Yes (ML)"]])
 
@@ -793,8 +795,9 @@ for r in [
     "Proc. CRYPTO, 1999, pp. 388–397.",
     "[3] E. Brier, C. Clavier, and F. Olivier, “Correlation power analysis with "
     "a leakage model,” in Proc. CHES, 2004, pp. 16–29.",
-    "[4] S. Chari, J. R. Rao, and P. Rohatgi, “Template attacks,” in Proc. "
-    "CHES, 2002, pp. 13–28.",
+    "[4] O. Bronchain and F.-X. Standaert, “Side-channel countermeasures' "
+    "dissection and the limits of closed source security evaluations,” IACR "
+    "Trans. Cryptogr. Hardw. Embed. Syst., vol. 2020, no. 2, pp. 1–25, 2020.",
     "[5] D. J. Bernstein, “ChaCha, a variant of Salsa20,” in Workshop Rec. "
     "SASC, 2008.",
     "[6] Y. Nir and A. Langley, “ChaCha20 and Poly1305 for IETF protocols,” "
@@ -806,14 +809,16 @@ for r in [
     "[9] R. Primas, P. Pessl, and S. Mangard, “Single-trace side-channel "
     "attacks on masked lattice-based encryption,” in Proc. CHES, 2017, pp. "
     "513–533.",
-    "[10] P. Pessl and R. Primas, “More practical single-trace attacks on the "
-    "number theoretic transform,” in Proc. LATINCRYPT, 2019, pp. 130–149.",
+    "[10] E. Dubrova, K. Ngo, J. Gärtner, and R. Wang, “Breaking a fifth-order "
+    "masked implementation of CRYSTALS-Kyber by copy-paste,” in Proc. 10th ACM "
+    "Asia Public-Key Cryptography Workshop (APKC), 2023, pp. 10–20.",
     "[11] P. Ravi, A. Chattopadhyay, J.-P. D'Anvers, and A. Baksi, "
     "“Side-channel and fault-injection attacks over lattice-based post-quantum "
     "schemes (Kyber, Dilithium): Survey and new results,” ACM Trans. Embedded "
     "Comput. Syst., vol. 23, no. 2, 2024.",
-    "[12] S. Mangard, E. Oswald, and T. Popp, Power Analysis Attacks: Revealing the "
-    "Secrets of Smart Cards. Springer, 2007.",
+    "[12] S. Picek, G. Perin, L. Mariot, L. Wu, and L. Batina, “SoK: Deep "
+    "learning-based physical side-channel analysis,” ACM Comput. Surv., vol. 55, "
+    "no. 11, art. 227, 2023.",
     "[13] G. Goodwill, B. Jun, J. Jaffe, and P. Rohatgi, “A testing methodology "
     "for side-channel resistance validation,” in NIST Non-Invasive Attack "
     "Testing Workshop, 2011.",
