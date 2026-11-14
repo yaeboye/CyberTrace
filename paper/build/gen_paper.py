@@ -343,7 +343,14 @@ para("Kocher introduced timing attacks [1] and, with Jaffe and Jun, differential
      "transform in a masked lattice scheme is vulnerable to a single-trace attack, "
      "Pessl and Primas [10] made the attack more practical, and Ravi et al. [11] "
      "survey the rapidly growing body of side-channel and fault attacks against "
-     "the standardised post-quantum schemes. The present work differs from this "
+     "the standardised post-quantum schemes. More recent work has broadened the "
+     "threat: Ravi et al. [15] mount generic chosen-ciphertext electromagnetic "
+     "attacks that recover keys from lattice key-encapsulation mechanisms, Ngo et "
+     "al. [18] break even a first-order masked implementation using deep-learning "
+     "power analysis, and Masure et al. [17] place deep-learning side-channel "
+     "analysis on a sound theoretical footing; on the defensive side, Bos et al. "
+     "[16] give first- and higher-order masked implementations of Kyber. The "
+     "present work differs from this "
      "literature in combining a classical and a post-quantum target on one "
      "commodity platform, and in pairing the attacks with a measured, "
      "layered defense that includes an active machine-learning monitor rather than "
@@ -728,7 +735,8 @@ para("Two defenses fail on hardware, and we report them honestly because a "
      "sustained current that the shunt integrates over the amplification loop; the "
      "mask changes which bits are set but not how many, over the window that is "
      "measured. A correct fix re-randomises the mask inside the leaking window, or "
-     "moves to arithmetic sharing with an explicit second-order check. The timing "
+     "moves to a provably masked implementation of the kind given by Bos et al. "
+     "[16], with an explicit higher-order leakage check. The timing "
      "attack fails because the secret-dependent delay, of roughly 0.2 "
      "milliseconds, is swamped by the serial round-trip of about 8 milliseconds "
      "and its jitter, a disadvantage of roughly forty to one; resolving it needs "
@@ -800,8 +808,10 @@ for r in [
     "513–533.",
     "[10] P. Pessl and R. Primas, “More practical single-trace attacks on the "
     "number theoretic transform,” in Proc. LATINCRYPT, 2019, pp. 130–149.",
-    "[11] P. Ravi et al., “Side-channel and fault-injection attacks over "
-    "lattice-based post-quantum schemes,” ACM TECS, vol. 22, no. 2, 2023.",
+    "[11] P. Ravi, A. Chattopadhyay, J.-P. D'Anvers, and A. Baksi, "
+    "“Side-channel and fault-injection attacks over lattice-based post-quantum "
+    "schemes (Kyber, Dilithium): Survey and new results,” ACM Trans. Embedded "
+    "Comput. Syst., vol. 23, no. 2, 2024.",
     "[12] S. Mangard, E. Oswald, and T. Popp, Power Analysis Attacks: Revealing the "
     "Secrets of Smart Cards. Springer, 2007.",
     "[13] G. Goodwill, B. Jun, J. Jaffe, and P. Rohatgi, “A testing methodology "
@@ -809,18 +819,18 @@ for r in [
     "Testing Workshop, 2011.",
     "[14] F. T. Liu, K. M. Ting, and Z.-H. Zhou, “Isolation forest,” in "
     "Proc. IEEE ICDM, 2008, pp. 413–422.",
-    "[15] T. Unterluggauer, T. Korak, S. Mangard et al., “Leakage bounds for "
-    "masked implementations,” in Proc. CHES, 2018.",
-    "[16] A. Moradi, B. Richter, T. Schneider, and F.-X. Standaert, “Leakage "
-    "detection with the chi-squared test,” IACR TCHES, 2018.",
-    "[17] C. O'Flynn and Z. Chen, “ChipWhisperer: An open-source platform for "
-    "hardware embedded security research,” in Proc. COSADE, 2014.",
-    "[18] B. J. Gilmore, N. Hanley, and M. O'Neill, “Neural network based "
-    "attacks on masked implementations,” in Proc. HOST, 2015.",
-    "[19] P. Ravi, S. Bhasin, S. S. Roy, and A. Chattopadhyay, “On exploiting "
-    "message leakage in lattice-based KEMs,” IEEE TIFS, vol. 16, 2021.",
-    "[20] M.-L. Akkar and C. Giraud, “An implementation of DES and AES secure "
-    "against some attacks,” in Proc. CHES, 2001, pp. 309–318.",
+    "[15] P. Ravi, S. Sinha Roy, A. Chattopadhyay, and S. Bhasin, “Generic "
+    "side-channel attacks on CCA-secure lattice-based PKE and KEMs,” IACR Trans. "
+    "Cryptogr. Hardw. Embed. Syst., vol. 2020, no. 3, pp. 307–335, 2020.",
+    "[16] J. W. Bos, M. Gourjon, J. Renes, T. Schneider, and C. van Vredendaal, "
+    "“Masking Kyber: First- and higher-order implementations,” IACR Trans. "
+    "Cryptogr. Hardw. Embed. Syst., vol. 2021, no. 4, pp. 173–214, 2021.",
+    "[17] L. Masure, C. Dumas, and E. Prouff, “A comprehensive study of deep "
+    "learning for side-channel analysis,” IACR Trans. Cryptogr. Hardw. Embed. "
+    "Syst., vol. 2020, no. 1, pp. 348–375, 2020.",
+    "[18] K. Ngo, E. Dubrova, Q. Guo, and T. Johansson, “A side-channel attack "
+    "on a masked IND-CCA secure Saber KEM implementation,” IACR Trans. Cryptogr. "
+    "Hardw. Embed. Syst., vol. 2021, no. 4, pp. 676–707, 2021.",
 ]:
     ref(r)
 
