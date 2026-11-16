@@ -331,37 +331,58 @@ para("ChaCha20 [5] initialises its state from a constant, the key, a counter and
      "established single-trace line of work on the transform [9], [10].")
 
 heading("RELATED WORK")
+sub("Power-Analysis Foundations and Methodology", first=True)
 para("Kocher introduced timing attacks [1] and, with Jaffe and Jun, differential "
-     "power analysis [2], establishing that physical measurements leak key "
-     "material. Brier, Clavier and Olivier [3] refined differential analysis into "
-     "the correlation attack used throughout this paper. The difficulty of "
-     "actually protecting a commodity device with masking, and the limits of "
-     "evaluating that protection, are dissected by Bronchain and Standaert [4], "
-     "while Picek et al. [12] give a recent systematization of deep-learning-based "
-     "side-channel analysis. Goodwill et al. [13] defined the "
-     "leakage-assessment methodology now used across the field. For lattice "
-     "cryptography, Primas, Pessl and Mangard [9] showed that the number-theoretic "
-     "transform in a masked lattice scheme is vulnerable to a single-trace attack, "
-     "and more recently Dubrova et al. [10] recover keys from masked Kyber "
-     "implementations up to fifth order using deep learning; Ravi et al. [11] "
-     "survey the rapidly growing body of side-channel and fault attacks against "
-     "the standardised post-quantum schemes. More recent work has broadened the "
-     "threat: Ravi et al. [15] mount generic chosen-ciphertext electromagnetic "
-     "attacks that recover keys from lattice key-encapsulation mechanisms, Ngo et "
-     "al. [18] break even a first-order masked implementation using deep-learning "
-     "power analysis, and Masure et al. [17] place deep-learning side-channel "
-     "analysis on a sound theoretical footing; on the defensive side, Bos et al. "
-     "[16] give first- and higher-order masked implementations of Kyber. The "
-     "present work differs from this "
-     "literature in combining a classical and a post-quantum target on one "
-     "commodity platform, and in pairing the attacks with a measured, "
-     "layered defense that includes an active machine-learning monitor rather than "
-     "passive countermeasures alone. Table 1 places the work against the most "
-     "directly comparable studies.")
+     "power analysis [2], establishing that physical measurements of a device leak "
+     "key material. Brier, Clavier and Olivier [3] refined differential analysis "
+     "into the correlation power analysis used throughout this paper, and Goodwill "
+     "et al. [13] defined the Test Vector Leakage Assessment methodology that is "
+     "now the standard way to detect leakage without mounting a full attack. On "
+     "the defensive side, Bronchain and Standaert [4] dissect how hard it actually "
+     "is to protect a commodity device with masking and the limits of evaluating "
+     "that protection, while Picek et al. [12] give a recent systematization of "
+     "deep-learning-based side-channel analysis, and Masure et al. [17] place such "
+     "attacks on a sound theoretical footing and show that Boolean masking remains "
+     "sound against them.")
+sub("Side-Channel Analysis of ChaCha20 and ARX Ciphers")
+para("Because this paper targets ChaCha20, the prior side-channel analyses of the "
+     "ChaCha and Salsa family are the most directly comparable. Mazumdar, Ali and "
+     "Sinanoglu [19] mounted the first correlation power analysis on Salsa20, "
+     "recovering all key words on a hardware implementation by targeting the first "
+     "round. Adomnicai, Fournier and Masson [20] analysed the ChaCha quarter round "
+     "through electromagnetic emanations on two 32-bit software implementations, "
+     "introducing a divide-and-conquer bricklayer attack to handle the "
+     "leakage-resilient variant. Najm et al. [21] compared the side-channel "
+     "properties of AES and ChaCha20 on microcontrollers using both correlation "
+     "power analysis and profiled machine learning, finding ChaCha20 somewhat "
+     "harder to attack but considerably more expensive to protect. These studies "
+     "establish that ChaCha20 leaks exploitable information; the present work "
+     "differs in recovering the key on a real microcontroller using only a "
+     "low-cost shunt-and-converter power setup, and in pairing the attack with a "
+     "measured, layered defense.")
+sub("Side-Channel Analysis of Post-Quantum Schemes")
+para("For lattice cryptography, Primas, Pessl and Mangard [9] showed that the "
+     "number-theoretic transform in a masked lattice scheme is vulnerable to a "
+     "single-trace attack, and Dubrova et al. [10] later recovered keys from "
+     "masked Kyber implementations up to fifth order using deep learning. Ravi et "
+     "al. survey the field [11] and mount generic chosen-ciphertext "
+     "electromagnetic attacks that recover keys from lattice key-encapsulation "
+     "mechanisms [15], while Ngo et al. [18] break even a first-order masked "
+     "implementation with deep-learning power analysis. On the defensive side, Bos "
+     "et al. [16] give first- and higher-order masked implementations of Kyber. "
+     "The present work reproduces this class of attack on the pointwise product of "
+     "Kyber, on far cheaper hardware than is usual.")
+para("Against this background, the present work is distinguished by combining a "
+     "classical and a post-quantum target on one commodity platform, by recovering "
+     "real keys on hardware rather than in simulation, and by pairing the attacks "
+     "with a measured, layered defense that includes an active machine-learning "
+     "monitor rather than passive countermeasures alone. Table 1 places the work "
+     "against the most directly comparable studies.")
 table("TABLE 1. Positioning against representative prior work.",
       ["Work", "Target", "Platform", "PQC", "Active defense"],
-      [["Kocher et al. [2]", "DES", "Smartcard", "No", "No"],
-       ["Brier et al. [3]", "DES / AES", "Smartcard", "No", "No"],
+      [["Brier et al. [3]", "DES / AES", "Smartcard", "No", "No"],
+       ["Adomnicai et al. [20]", "ChaCha20 (EM)", "32-bit MCU", "No", "No"],
+       ["Najm et al. [21]", "AES / ChaCha20", "Microcontroller", "No", "No"],
        ["Primas et al. [9]", "Kyber NTT", "Cortex-M", "Yes", "No"],
        ["Dubrova et al. [10]", "Masked Kyber", "Cortex-M", "Yes", "No"],
        ["Ravi et al. [11]", "PQC survey", "Various", "Yes", "No"],
@@ -836,6 +857,15 @@ for r in [
     "[18] K. Ngo, E. Dubrova, Q. Guo, and T. Johansson, “A side-channel attack "
     "on a masked IND-CCA secure Saber KEM implementation,” IACR Trans. Cryptogr. "
     "Hardw. Embed. Syst., vol. 2021, no. 4, pp. 676–707, 2021.",
+    "[19] S. Mazumdar, S. S. Ali, and O. Sinanoglu, “Power analysis attacks on "
+    "ARX: An application to Salsa20,” in Proc. IEEE Int. On-Line Testing Symp. "
+    "(IOLTS), 2015, pp. 40–43.",
+    "[20] A. Adomnicai, J. J. A. Fournier, and L. Masson, “Bricklayer attack: A "
+    "side-channel analysis on the ChaCha quarter round,” in Proc. INDOCRYPT, LNCS "
+    "10698, 2017, pp. 65–84.",
+    "[21] Y. Najm, D. Jap, B. Jungk, S. Picek, and S. Bhasin, “On comparing "
+    "side-channel properties of AES and ChaCha20 on microcontrollers,” in Proc. "
+    "IEEE Asia Pacific Conf. Circuits Syst. (APCCAS), 2018, pp. 552–555.",
 ]:
     ref(r)
 
@@ -855,6 +885,25 @@ BIOS = [
      "engineering at the Vellore Institute of Technology, Vellore, India. His "
      "interests include machine learning for security and anomaly detection."),
 ]
+def _norm_photo(src):
+    """Fix EXIF orientation and centre-crop to the IEEE 1:1.25 (4:5) ratio so
+    every author headshot is the same shape and size. Returns the path to a
+    normalised PNG, or None."""
+    from PIL import Image, ImageOps
+    im = ImageOps.exif_transpose(Image.open(str(src))).convert("RGB")
+    w, h = im.size
+    target = 4 / 5  # width / height
+    if w / h > target:                 # too wide -> crop width
+        nw = int(h * target); x = (w - nw) // 2
+        im = im.crop((x, 0, x + nw, h))
+    else:                              # too tall -> crop height (keep top)
+        nh = int(w / target); y = int((h - nh) * 0.35)
+        im = im.crop((0, y, w, y + nh))
+    out = src.parent / ("_norm_" + src.stem + ".png")
+    im.save(str(out))
+    return out
+
+
 for photo, bio in BIOS:
     t = doc.add_table(rows=1, cols=2)
     t.autofit = False
@@ -862,13 +911,18 @@ for photo, bio in BIOS:
     t.columns[1].width = Inches(2.4)
     left, right = t.rows[0].cells
     left.width = Inches(1.0); right.width = Inches(2.4)
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    left.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+    right.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
     p = left.paragraphs[0]
     img = ASSETS / photo
     if img.exists():
-        p.add_run().add_picture(str(img), width=Inches(0.9))
+        p.add_run().add_picture(str(_norm_photo(img)), width=Inches(0.9), height=Inches(1.125))
     rp = right.paragraphs[0]
     rp.style = doc.styles["AU_Bios"]
     rp.paragraph_format.left_indent = Inches(0)
+    rp.paragraph_format.space_before = Pt(0)
+    rp.paragraph_format.space_after = Pt(0)
     rp.add_run(bio)
 
 doc.save(str(OUT))
