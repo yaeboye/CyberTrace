@@ -182,28 +182,26 @@ for idx in (8, 7):
     P[idx]._p.getparent().remove(P[idx]._p)
 
 ABSTRACT = (
-    "ABSTRACT Side-channel attacks recover secret keys from the physical "
-    "behaviour of a device rather than from any flaw in the cipher. This paper "
-    "presents a complete, low-cost attack-and-defense study on a commodity "
-    "ESP32-S3 microcontroller, built from commodity, widely available components, that "
-    "targets both a classical stream cipher, ChaCha20, and a post-quantum key "
-    "encapsulation mechanism, CRYSTALS-Kyber. Power traces are captured with a "
-    "16-bit ADS1115 converter across a 10 ohm shunt driven by a Raspberry Pi 5. "
-    "Using correlation power analysis we recover the first-round ChaCha20 key "
-    "word (0xDEADBEEF) at a peak correlation of 0.28 within fewer than 250 "
-    "traces, and a secret Kyber NTT coefficient (1234) at a correlation of "
-    "0.23, on real hardware. We then evaluate five layered defenses: Boolean "
-    "masking, constant-time execution, nonce-and-counter freshness, an active "
-    "machine-learning probing monitor, and automatic key refresh. A Test Vector "
-    "Leakage Assessment shows masking moves the leakage statistic from above the "
-    "4.5 threshold to below it, and an Isolation Forest traffic monitor detects "
-    "trace-collection within ten requests at a 0.5 percent false-positive rate, "
-    "with a receiver-operating-characteristic area of 1.000 against an aggressive "
-    "attacker and 0.982 against a throttled one. We report two honest negative "
-    "results, where masking of the amplified Kyber product and a timing attack "
-    "over the serial link both fail on hardware, and explain why. The complete "
-    "toolkit, firmware, and captured traces are released to make the study "
-    "reproducible on equivalent hardware.")
+    "ABSTRACT A cipher can be mathematically sound and still give up its key "
+    "through the current its chip draws. We test that gap on an ESP32-S3, a "
+    "commodity Wi-Fi microcontroller, attacking two very different primitives on "
+    "the same board: the stream cipher ChaCha20 and the post-quantum "
+    "key-encapsulation mechanism CRYSTALS-Kyber. The instrument is deliberately "
+    "humble, a ten-ohm shunt read by a sixteen-bit ADS1115 converter under a "
+    "Raspberry Pi 5, with no oscilloscope anywhere in the setup. Correlation "
+    "power analysis recovers the first-round ChaCha20 key word (0xDEADBEEF) at a "
+    "peak correlation of 0.28 in under 250 traces, and a secret Kyber transform "
+    "coefficient (1234) at 0.23, both on real silicon. We then switch sides and "
+    "measure five defenses: Boolean masking, constant-time execution, "
+    "nonce-and-counter freshness, an Isolation-Forest probing monitor, and "
+    "automatic key refresh. Masking pulls the leakage t-statistic from above the "
+    "4.5 line down below it; the traffic monitor flags trace collection inside "
+    "ten requests at a 0.5 percent false-alarm rate, with a perfect "
+    "receiver-operating-characteristic area against a flooding attacker and 0.982 "
+    "against a throttled one. We do not hide the failures: masking of the "
+    "amplified Kyber product leaves it leaking, and a timing attack drowns in "
+    "serial latency, and we explain both. Firmware, tooling, and the captured "
+    "traces are released so the whole study can be rerun on the same parts.")
 set_text(P[7] if len(P) > 7 else P[-1], "")  # safety; real abstract set below
 # locate the Abstract and IT paragraphs by style and fill them
 for p in doc.paragraphs:
@@ -220,19 +218,17 @@ for p in doc.paragraphs:
 
 # ---------- body -------------------------------------------------------------
 heading("INTRODUCTION", first=True)
-para("Modern ciphers are adopted because no practical mathematical attack against "
-     "them is known. A side-channel attack sidesteps that mathematics entirely: "
-     "rather than attacking the algorithm, it observes a physical quantity that the "
-     "implementation leaks while it computes with the key, and recovers the key "
-     "from the statistical dependence between that signal and the data being "
-     "processed [1], [2]. The most widely exploited channel is the instantaneous "
-     "power the device draws, because the dynamic current of a digital circuit "
-     "depends on the number of bits that toggle, and that number depends in turn "
-     "on the secret-dependent values the circuit is manipulating. Because the "
-     "leakage is a property of the implementation rather than of the algorithm, "
-     "even a perfectly specified cipher running on an ordinary microcontroller can "
-     "be broken by an adversary equipped with nothing more than a shunt resistor "
-     "and an inexpensive analog-to-digital converter.")
+para("A modern cipher earns trust by surviving years of mathematical "
+     "cryptanalysis. None of that helps once the cipher runs on a real chip. While "
+     "the processor adds, rotates and exclusive-ors the key, the number of "
+     "transistors that switch each cycle rises and falls with the very bits being "
+     "handled, and that switching shows up as a wobble in the chip's supply "
+     "current. Measure the wobble against a guess of the key, over enough "
+     "encryptions, and the correct guess correlates where the wrong ones do not "
+     "[1], [2]. The leak lives in the implementation, not the algorithm, so a "
+     "textbook-perfect cipher on an ordinary microcontroller falls to an attacker "
+     "holding little more than a shunt resistor and a cheap analog-to-digital "
+     "converter.")
 para("The threat is most acute for embedded and Internet-of-Things devices. These "
      "devices are deployed in the field, are physically accessible to an attacker, "
      "run cryptography on small microcontrollers without dedicated hardware "
@@ -344,22 +340,21 @@ para("Kocher introduced timing attacks [1] and, with Jaffe and Jun, differential
      "deep-learning-based side-channel analysis, and Masure et al. [17] place such "
      "attacks on a sound theoretical footing and show that Boolean masking remains "
      "sound against them.")
-sub("Side-Channel Analysis of ChaCha20 and ARX Ciphers")
-para("Because this paper targets ChaCha20, the prior side-channel analyses of the "
-     "ChaCha and Salsa family are the most directly comparable. Mazumdar, Ali and "
-     "Sinanoglu [19] mounted the first correlation power analysis on Salsa20, "
-     "recovering all key words on a hardware implementation by targeting the first "
-     "round. Adomnicai, Fournier and Masson [20] analysed the ChaCha quarter round "
-     "through electromagnetic emanations on two 32-bit software implementations, "
-     "introducing a divide-and-conquer bricklayer attack to handle the "
-     "leakage-resilient variant. Najm et al. [21] compared the side-channel "
-     "properties of AES and ChaCha20 on microcontrollers using both correlation "
-     "power analysis and profiled machine learning, finding ChaCha20 somewhat "
-     "harder to attack but considerably more expensive to protect. These studies "
-     "establish that ChaCha20 leaks exploitable information; the present work "
-     "differs in recovering the key on a real microcontroller using only a "
-     "low-cost shunt-and-converter power setup, and in pairing the attack with a "
-     "measured, layered defense.")
+sub("Side-Channel Analysis on ARX Ciphers and the ESP32")
+para("Two recent strands of work bear directly on our target. The ESP32 family "
+     "has itself been broken physically: Abdellatif et al. [19] extracted the "
+     "256-bit firmware-encryption key of an ESP32 by correlating the power drawn "
+     "during boot-time decryption, needing on the order of three hundred thousand "
+     "traces. That the chip's hardware AES leaks its key is a strong hint that "
+     "software ciphers running on the same core, with no dedicated protection, "
+     "leak far more readily. ChaCha20, our classical target, is an ARX cipher, and "
+     "its modular-addition non-linearity is exactly the operation we exploit. "
+     "Hameed and Alkhzaimi [20] recently trained a deep-learning profiling attack "
+     "that recovers the key of the ARX cipher SPECK in fewer than 250 traces, a "
+     "trace count close to our own. What neither line of work does, and what we "
+     "add, is to pair the attack with a measured defense, and to carry it out on a "
+     "deliberately cheap power-measurement rig rather than a laboratory "
+     "oscilloscope.")
 sub("Side-Channel Analysis of Post-Quantum Schemes")
 para("For lattice cryptography, Primas, Pessl and Mangard [9] showed that the "
      "number-theoretic transform in a masked lattice scheme is vulnerable to a "
@@ -381,8 +376,8 @@ para("Against this background, the present work is distinguished by combining a 
 table("TABLE 1. Positioning against representative prior work.",
       ["Work", "Target", "Platform", "PQC", "Active defense"],
       [["Brier et al. [3]", "DES / AES", "Smartcard", "No", "No"],
-       ["Adomnicai et al. [20]", "ChaCha20 (EM)", "32-bit MCU", "No", "No"],
-       ["Najm et al. [21]", "AES / ChaCha20", "Microcontroller", "No", "No"],
+       ["Abdellatif et al. [19]", "ESP32 AES (boot)", "ESP32", "No", "No"],
+       ["Hameed & Alkhzaimi [20]", "SPECK (ARX, DL)", "Software", "No", "No"],
        ["Primas et al. [9]", "Kyber NTT", "Cortex-M", "Yes", "No"],
        ["Dubrova et al. [10]", "Masked Kyber", "Cortex-M", "Yes", "No"],
        ["Ravi et al. [11]", "PQC survey", "Various", "Yes", "No"],
@@ -794,19 +789,19 @@ para("A striking aspect of the study is how modest its equipment is. The entire 
      "on the host side of a device without modifying the cipher at all.")
 
 heading("CONCLUSION")
-para("We have shown that a measurement rig built from commodity, widely available "
-     "components recovers real keys from both a classical stream cipher and a post-quantum "
-     "key-encapsulation mechanism on a commodity microcontroller, and that a "
-     "layered set of countermeasures, each measured rather than asserted, removes "
-     "the leakage it targets while an active machine-learning monitor detects the "
-     "attack as it is mounted, on real as well as synthetic traffic. We have also "
-     "reported, and explained, two negative results that bound the scope of the "
-     "defenses. Future work will close those negatives, extend the attacks from a "
-     "single key word and coefficient to a full secret, replace the "
-     "amplified-leakage mode with a high-bandwidth capture, and train the probing "
-     "monitor on a larger corpus of real deployment traffic. The complete toolkit, "
-     "firmware, captured traces and trained models are released so that the study "
-     "can be reproduced and extended on equivalent hardware.")
+para("The takeaway is uncomfortable for embedded cryptography. A shunt resistor, "
+     "a hobby-grade converter and a single-board computer were enough to pull real "
+     "keys out of both a classical and a post-quantum cipher on a commodity "
+     "microcontroller. On the other side of the ledger, each of the five defenses "
+     "was judged by the leakage it actually removed rather than by its reputation, "
+     "and the machine-learning monitor caught the attack while it was still being "
+     "mounted, on captured traffic as well as synthetic. Two defenses failed; we "
+     "said so, and said why. The open threads are clear: close those two failures, "
+     "lift the attacks from a single word and coefficient to a whole secret, swap "
+     "the amplified-leakage mode for a high-bandwidth capture, and feed the monitor "
+     "a larger body of real deployment traffic. Firmware, tools, traces and trained "
+     "models all ship with the paper, so the next group can reproduce every number "
+     "and push past it.")
 
 heading("REFERENCES")
 for r in [
@@ -857,15 +852,11 @@ for r in [
     "[18] K. Ngo, E. Dubrova, Q. Guo, and T. Johansson, “A side-channel attack "
     "on a masked IND-CCA secure Saber KEM implementation,” IACR Trans. Cryptogr. "
     "Hardw. Embed. Syst., vol. 2021, no. 4, pp. 676–707, 2021.",
-    "[19] S. Mazumdar, S. S. Ali, and O. Sinanoglu, “Power analysis attacks on "
-    "ARX: An application to Salsa20,” in Proc. IEEE Int. On-Line Testing Symp. "
-    "(IOLTS), 2015, pp. 40–43.",
-    "[20] A. Adomnicai, J. J. A. Fournier, and L. Masson, “Bricklayer attack: A "
-    "side-channel analysis on the ChaCha quarter round,” in Proc. INDOCRYPT, LNCS "
-    "10698, 2017, pp. 65–84.",
-    "[21] Y. Najm, D. Jap, B. Jungk, S. Picek, and S. Bhasin, “On comparing "
-    "side-channel properties of AES and ChaCha20 on microcontrollers,” in Proc. "
-    "IEEE Asia Pacific Conf. Circuits Syst. (APCCAS), 2018, pp. 552–555.",
+    "[19] K. M. Abdellatif, O. Hériveaux, and A. Thillard, “Unlimited results: "
+    "Breaking firmware encryption of ESP32-V3,” IACR Cryptol. ePrint Arch., "
+    "Paper 2023/090, 2023.",
+    "[20] F. Hameed and H. Alkhzaimi, “Deep learning-based profiling side-channel "
+    "attacks in SPECK cipher,” Sci. Rep., vol. 15, 2025.",
 ]:
     ref(r)
 
